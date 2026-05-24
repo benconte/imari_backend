@@ -1,0 +1,212 @@
+# ============================================================
+# Dependencies
+# ============================================================
+node_modules/
+jspm_packages/
+.pnp
+.pnp.js
+.pnp.cjs
+.yarn/install-state.gz
+
+# ============================================================
+# Build output
+# ============================================================
+dist/
+build/
+out/
+tmp/
+*.tsbuildinfo
+
+# ============================================================
+# Environment & secrets
+# ============================================================
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.cert
+firebase-service-account.json
+firebase-adminsdk-*.json
+google-credentials.json
+serviceAccountKey.json
+
+# ============================================================
+# Prisma
+# ============================================================
+prisma/migrations/dev/
+prisma/*.db
+prisma/*.db-journal
+
+# ============================================================
+# Logs
+# ============================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.npm
+.eslintcache
+.stylelintcache
+
+# ============================================================
+# Testing & coverage
+# ============================================================
+coverage/
+*.lcov
+.nyc_output/
+junit.xml
+test-results/
+playwright-report/
+.playwright/
+
+# ============================================================
+# VSCode
+# ============================================================
+# Ignore VSCode workspace settings by default,
+# but allow the team to share specific configs (uncomment to share).
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# VSCode history extension
+.history/
+
+# VSCode test artifacts
+.vscode-test/
+
+# Local VSCode workspaces
+*.code-workspace
+
+# ============================================================
+# JetBrains (WebStorm/IntelliJ) — in case you switch IDEs
+# ============================================================
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ============================================================
+# Sublime / Vim / Emacs
+# ============================================================
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.\#*
+\#*\#
+.netrwhist
+
+# ============================================================
+# OS files
+# ============================================================
+# Linux
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.stackdump
+
+# ============================================================
+# Docker
+# ============================================================
+.docker/
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ============================================================
+# Process & runtime
+# ============================================================
+*.pid
+*.seed
+*.pid.lock
+pids/
+.lock-wscript
+
+# ============================================================
+# Diagnostic & profiling
+# ============================================================
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
+
+# ============================================================
+# Caches
+# ============================================================
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.turbo/
+.vite/
+.rollup.cache/
+.tsbuildinfo
+
+# ============================================================
+# Temporary files
+# ============================================================
+*.tmp
+*.temp
+*.bak
+*.orig
+.temp/
+.tmp/
+
+# ============================================================
+# Local-only project files (notes, scratchpads)
+# ============================================================
+NOTES.md
+TODO.md
+scratch/
+.scratch/
+local/
+.local/
+
+# ============================================================
+# Uploaded / generated files (if you handle file uploads locally)
+# ============================================================
+uploads/
+storage/
+public/uploads/

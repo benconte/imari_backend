@@ -1,0 +1,1270 @@
+// ============================================================
+// IMARI - Intelligent Digital Banking & Financial Lifestyle Platform
+// Prisma Schema v3.0 (Enhanced for production-grade fintech)
+// ============================================================
+//
+// Key changes from v2.0:
+//  - Added LedgerEntry for double-entry bookkeeping (CRITICAL)
+//  - Added Subscription + SubscriptionPayment (was referenced, never defined)
+//  - Added Beneficiary, ExchangeRate, SavingsContribution
+//  - Added WalletPin, IdempotencyKey, LoginAttempt, MfaBackupCode
+//  - Added Flutterwave integration: PaymentProviderTransaction, WebhookEvent, LinkedPaymentMethod
+//  - Added CardTransaction for card-specific auth/settle flow
+//  - Added AdminUser for SRS-defined operator roles
+//  - Hardened session storage (store hashed token, not raw JWT)
+//  - Replaced single mfaSecret string with MfaSecret model + backup codes
+//
+// Naming convention: camelCase fields, snake_case table mappings.
+// All money fields use Decimal(18, 4) for currency-safe arithmetic.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum KYCStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  VERIFIED
+  REJECTED
+}
+
+enum KYCTier {
+  TIER_0  // unverified, low limits
+  TIER_1  // phone + email verified
+  TIER_2  // ID verified
+  TIER_3  // full KYC + address proof
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
+enum Currency {
+  RWF
+  USD
+  EUR
+  KES
+  UGX
+  TZS
+}
+
+enum TransactionType {
+  DEPOSIT              // funds in from Flutterwave / linked method
+  WITHDRAWAL           // funds out to Flutterwave / linked method
+  P2P_TRANSFER         // wallet-to-wallet inside Imari
+  MERCHANT_PAYMENT     // pay merchant via card or wallet
+  QR_PAYMENT           // QR-initiated payment
+  SCHEDULED_TRANSFER   // executed scheduled transfer
+  CARD_PAYMENT         // virtual card spend
+  VAULT_CONTRIBUTION   // wallet -> vault
+  VAULT_WITHDRAWAL     // vault -> wallet
+  SUBSCRIPTION_CHARGE  // recurring subscription billing
+  REVERSAL
+  REFUND
+  FEE
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+  CANCELLED
+  REQUIRES_ACTION   // e.g. 3DS, OTP needed from provider
+}
+
+enum TransactionDirection {
+  CREDIT
+  DEBIT
+}
+
+enum LedgerEntryType {
+  USER_WALLET
+  USER_VAULT
+  SYSTEM_FEE
+  SYSTEM_SUSPENSE       // funds in transit (e.g. Flutterwave settlement pending)
+  SYSTEM_REVENUE
+  EXTERNAL_PROVIDER     // counterparty for deposits/withdrawals
+}
+
+enum VaultStatus {
+  ACTIVE
+  LOCKED
+  COMPLETED
+  CANCELLED
+}
+
+enum SavingsContributionSource {
+  MANUAL
+  ROUND_UP
+  PERCENTAGE_RULE
+  FIXED_RULE
+  SCHEDULED_RULE
+}
+
+enum VirtualCardStatus {
+  ACTIVE
+  FROZEN
+  EXPIRED
+  CANCELLED
+}
+
+enum VirtualCardType {
+  SINGLE_USE
+  MULTI_USE
+  SUBSCRIPTION
+}
+
+enum CardTransactionStatus {
+  AUTHORIZED
+  CAPTURED
+  DECLINED
+  REVERSED
+  REFUNDED
+}
+
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum BudgetStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  EXCEEDED
+}
+
+enum SavingsRuleType {
+  ROUND_UP
+  FIXED_AMOUNT
+  PERCENTAGE
+  SCHEDULED
+}
+
+enum NotificationType {
+  TRANSACTION_ALERT
+  SECURITY_WARNING
+  SAVINGS_UPDATE
+  BUDGET_ALERT
+  PAYMENT_CONFIRMATION
+  PROMOTIONAL
+  FINANCIAL_INSIGHT
+  SUBSCRIPTION_REMINDER
+  KYC_UPDATE
+  CARD_ALERT
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  IN_APP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAUSED
+  EXPIRED
+  PENDING_RENEWAL
+}
+
+enum SubscriptionBillingCycle {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum SubscriptionDetectionSource {
+  USER_CREATED
+  AUTO_DETECTED
+  MERCHANT_REGISTERED
+}
+
+enum DeviceType {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum SessionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  PASSWORD_CHANGE
+  PIN_CHANGE
+  PROFILE_UPDATE
+  WALLET_CREATED
+  CARD_CREATED
+  CARD_FROZEN
+  CARD_UNFROZEN
+  SUSPICIOUS_ACTIVITY
+  DEVICE_REGISTERED
+  DEVICE_REMOVED
+  MFA_ENABLED
+  MFA_DISABLED
+  KYC_SUBMITTED
+  KYC_VERIFIED
+  KYC_REJECTED
+  ADMIN_ACTION
+}
+
+enum SpendingCategory {
+  FOOD_AND_DINING
+  GROCERIES
+  TRANSPORT
+  SHOPPING
+  ENTERTAINMENT
+  UTILITIES
+  RENT
+  HEALTH
+  EDUCATION
+  TRAVEL
+  SUBSCRIPTIONS
+  TRANSFERS
+  INCOME
+  FEES
+  SAVINGS
+  OTHER
+}
+
+enum FraudAlertStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum DocumentType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+}
+
+enum PaymentProvider {
+  FLUTTERWAVE
+  INTERNAL
+}
+
+enum LinkedMethodType {
+  MOBILE_MONEY
+  BANK_ACCOUNT
+  CARD
+}
+
+enum LinkedMethodStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REMOVED
+}
+
+enum BeneficiaryType {
+  IMARI_USER
+  MOBILE_MONEY
+  BANK_ACCOUNT
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  OPS_ADMIN
+  FRAUD_OFFICER
+  SUPPORT
+  READ_ONLY
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+// ============================================================
+// MODULE 1: USERS & IDENTITY
+// ============================================================
+
+model User {
+  id                   String     @id @default(uuid())
+  email                String     @unique
+  phone                String     @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  dateOfBirth          DateTime?
+  nationalId           String?    @unique
+  profilePhotoUrl      String?
+  status               UserStatus @default(PENDING)
+  kycStatus            KYCStatus  @default(NOT_STARTED)
+  kycTier              KYCTier    @default(TIER_0)
+  isEmailVerified      Boolean    @default(false)
+  isPhoneVerified      Boolean    @default(false)
+  isMfaEnabled         Boolean    @default(false)
+  preferredCurrency    Currency   @default(RWF)
+  preferredLanguage    String     @default("en")
+  financialHealthScore Float?
+  referralCode         String?    @unique
+  referredById         String?
+  lastLoginAt          DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  deletedAt            DateTime?  // soft delete
+
+  // Relations
+  referredBy             User?                @relation("UserReferral", fields: [referredById], references: [id])
+  referrals              User[]               @relation("UserReferral")
+  wallets                Wallet[]
+  devices                UserDevice[]
+  sessions               UserSession[]
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  savingsVaults          SavingsVault[]
+  budgets                Budget[]
+  virtualCards           VirtualCard[]
+  subscriptions          Subscription[]
+  financialInsights      FinancialInsight[]
+  fraudAlerts            FraudAlert[]
+  auditLogs              AuditLog[]
+  kycDocument            KYCDocument?
+  mfaSecret              MfaSecret?
+  walletPin              WalletPin?
+  beneficiaries          Beneficiary[]
+  linkedPaymentMethods   LinkedPaymentMethod[]
+  loginAttempts          LoginAttempt[]
+  idempotencyKeys        IdempotencyKey[]
+  sentTransactions       Transaction[]        @relation("SentTransactions")
+  receivedTransactions   Transaction[]        @relation("ReceivedTransactions")
+  savingsRules           SavingsRule[]
+  scheduledTransfers     ScheduledTransfer[]
+  analyticsSnapshots     AnalyticsSnapshot[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([referralCode])
+  @@index([status])
+  @@map("users")
+}
+
+model KYCDocument {
+  id              String       @id @default(uuid())
+  userId          String       @unique
+  documentType    DocumentType
+  documentNumber  String
+  documentFrontUrl String
+  documentBackUrl String?
+  selfieUrl       String?
+  verifiedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  reviewedById    String?      // admin who reviewed
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_documents")
+}
+
+model UserDevice {
+  id           String     @id @default(uuid())
+  userId       String
+  deviceId     String     @unique  // client-generated UUID
+  deviceName   String
+  deviceType   DeviceType
+  platform     String
+  osVersion    String?
+  appVersion   String?
+  pushToken    String?    // FCM/APNs token
+  fingerprint  String?
+  isTrusted    Boolean    @default(false)
+  lastSeenAt   DateTime?
+  registeredAt DateTime   @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions UserSession[]
+
+  @@index([userId])
+  @@index([pushToken])
+  @@map("user_devices")
+}
+
+model UserSession {
+  id              String        @id @default(uuid())
+  userId          String
+  deviceId        String
+  jti             String        @unique  // JWT ID (not the full token)
+  refreshTokenHash String       @unique  // hashed refresh token
+  ipAddress       String?
+  userAgent       String?
+  location        String?
+  status          SessionStatus @default(ACTIVE)
+  expiresAt       DateTime
+  refreshExpiresAt DateTime
+  createdAt       DateTime      @default(now())
+  revokedAt       DateTime?
+  revokedReason   String?
+
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device UserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([jti])
+  @@index([status])
+  @@map("user_sessions")
+}
+
+model MfaSecret {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  secret      String    // encrypted at rest (use card-crypto.service or similar)
+  enabledAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  backupCodes MfaBackupCode[]
+
+  @@map("mfa_secrets")
+}
+
+model MfaBackupCode {
+  id          String    @id @default(uuid())
+  mfaSecretId String
+  codeHash    String    // hashed (single-use)
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  mfaSecret MfaSecret @relation(fields: [mfaSecretId], references: [id], onDelete: Cascade)
+
+  @@index([mfaSecretId])
+  @@map("mfa_backup_codes")
+}
+
+model LoginAttempt {
+  id            String   @id @default(uuid())
+  userId        String?  // nullable: failed attempts before identifying user
+  identifier    String   // email or phone used
+  ipAddress     String?
+  userAgent     String?
+  deviceId      String?
+  success       Boolean
+  failureReason String?
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([identifier])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
+// ============================================================
+// MODULE 2: WALLET INFRASTRUCTURE
+// ============================================================
+
+model Wallet {
+  id           String       @id @default(uuid())
+  userId       String
+  walletNumber String       @unique  // human-friendly e.g. IMR-1234567
+  currency     Currency     @default(RWF)
+  balance      Decimal      @default(0) @db.Decimal(18, 4)
+  availableBalance Decimal  @default(0) @db.Decimal(18, 4)  // balance minus holds
+  isLocked     Boolean      @default(false)
+  status       WalletStatus @default(ACTIVE)
+  isPrimary    Boolean      @default(false)
+  dailyLimit   Decimal?     @db.Decimal(18, 4)  // outbound limit per day
+  monthlyLimit Decimal?     @db.Decimal(18, 4)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries        LedgerEntry[]
+  sentTransactions     Transaction[]       @relation("WalletSentTransactions")
+  receivedTransactions Transaction[]       @relation("WalletReceivedTransactions")
+  virtualCards         VirtualCard[]
+  savingsVaults        SavingsVault[]
+  savingsRules         SavingsRule[]
+  scheduledTransfers   ScheduledTransfer[]
+  savingsContributions SavingsContribution[]
+
+  @@index([userId])
+  @@index([walletNumber])
+  @@index([status])
+  @@map("wallets")
+}
+
+model WalletPin {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  pinHash         String    // bcrypt/argon2
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  lastChangedAt   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallet_pins")
+}
+
+// ============================================================
+// MODULE 3: LEDGER (double-entry bookkeeping)
+// ============================================================
+// Every Transaction produces 2+ LedgerEntries. The sum of all amounts
+// for a single transactionId MUST be zero (credits = debits). Use this
+// as your single source of truth for balances during reconciliation.
+//
+// Account types:
+//   USER_WALLET     - tied to walletId
+//   USER_VAULT      - tied to vaultId
+//   SYSTEM_SUSPENSE - in-transit funds (e.g. Flutterwave settlement)
+//   SYSTEM_FEE      - fees collected by Imari
+//   SYSTEM_REVENUE  - net platform revenue
+//   EXTERNAL_PROVIDER - counterparty (Flutterwave, bank, etc.)
+// ============================================================
+
+model LedgerEntry {
+  id            String               @id @default(uuid())
+  transactionId String
+  entryType     LedgerEntryType
+  walletId      String?              // present when entryType = USER_WALLET
+  vaultId       String?              // present when entryType = USER_VAULT
+  accountKey    String               // canonical key e.g. "system:suspense:flutterwave"
+  direction     TransactionDirection // CREDIT or DEBIT
+  amount        Decimal              @db.Decimal(18, 4)
+  currency      Currency
+  balanceBefore Decimal?             @db.Decimal(18, 4)
+  balanceAfter  Decimal?             @db.Decimal(18, 4)
+  description   String?
+  createdAt     DateTime             @default(now())
+
+  transaction Transaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  wallet      Wallet?       @relation(fields: [walletId], references: [id])
+  vault       SavingsVault? @relation(fields: [vaultId], references: [id])
+
+  @@index([transactionId])
+  @@index([walletId])
+  @@index([vaultId])
+  @@index([accountKey])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
+
+// ============================================================
+// MODULE 4: TRANSACTION & PAYMENT PROCESSING
+// ============================================================
+
+model Transaction {
+  id               String               @id @default(uuid())
+  reference        String               @unique  // human-readable: IMR-TXN-XXXXX
+  idempotencyKey   String?              @unique  // for safe retries
+  senderId         String?
+  receiverId       String?
+  senderWalletId   String?
+  receiverWalletId String?
+  type             TransactionType
+  direction        TransactionDirection
+  amount           Decimal              @db.Decimal(18, 4)
+  currency         Currency
+  fee              Decimal              @default(0) @db.Decimal(18, 4)
+  netAmount        Decimal              @db.Decimal(18, 4)  // amount - fee for outbound
+  exchangeRate     Decimal?             @db.Decimal(18, 6)
+  status           TransactionStatus    @default(PENDING)
+  category         SpendingCategory?
+  categorySource   String?              // AUTO | USER | RULE
+  description      String?
+  merchantName     String?
+  merchantId       String?
+  qrData           String?
+  receiptUrl       String?
+  failureReason    String?
+  riskScore        Float?
+  metadata         Json?
+  processedAt      DateTime?
+  reversedAt       DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  sender               User?                        @relation("SentTransactions", fields: [senderId], references: [id])
+  receiver             User?                        @relation("ReceivedTransactions", fields: [receiverId], references: [id])
+  senderWallet         Wallet?                      @relation("WalletSentTransactions", fields: [senderWalletId], references: [id])
+  receiverWallet       Wallet?                      @relation("WalletReceivedTransactions", fields: [receiverWalletId], references: [id])
+  ledgerEntries        LedgerEntry[]
+  fraudFlags           FraudFlag[]
+  providerTransaction  PaymentProviderTransaction?
+  cardTransaction      CardTransaction?
+  savingsContribution  SavingsContribution?
+  subscriptionPayment  SubscriptionPayment?
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([senderWalletId])
+  @@index([receiverWalletId])
+  @@index([reference])
+  @@index([status])
+  @@index([type])
+  @@index([category])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model IdempotencyKey {
+  id           String    @id @default(uuid())
+  key          String    @unique
+  userId       String
+  endpoint     String    // e.g. "POST /transactions/p2p"
+  requestHash  String    // SHA-256 of normalized request body
+  responseStatus Int?
+  responseBody Json?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+model ScheduledTransfer {
+  id                   String    @id @default(uuid())
+  userId               String
+  walletId             String
+  receiverPhone        String?
+  receiverWalletNumber String?
+  beneficiaryId        String?
+  amount               Decimal   @db.Decimal(18, 4)
+  currency             Currency
+  description          String?
+  cronExpression       String    // e.g. "0 9 1 * *" for 1st of every month
+  timezone             String    @default("Africa/Kigali")
+  nextRunAt            DateTime
+  lastRunAt            DateTime?
+  lastStatus           TransactionStatus?
+  failureCount         Int       @default(0)
+  maxFailures          Int       @default(3)
+  isActive             Boolean   @default(true)
+  endsAt               DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet      Wallet       @relation(fields: [walletId], references: [id])
+  beneficiary Beneficiary? @relation(fields: [beneficiaryId], references: [id])
+
+  @@index([userId])
+  @@index([nextRunAt])
+  @@index([isActive])
+  @@map("scheduled_transfers")
+}
+
+model Beneficiary {
+  id              String          @id @default(uuid())
+  userId          String
+  type            BeneficiaryType
+  displayName     String
+  imariUserId     String?         // populated if type = IMARI_USER
+  imariWalletNumber String?
+  phone           String?
+  accountNumber   String?
+  bankCode        String?         // bank routing code (for BANK_ACCOUNT)
+  bankName        String?
+  isFavorite      Boolean         @default(false)
+  lastUsedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledTransfers ScheduledTransfer[]
+
+  @@index([userId])
+  @@index([userId, isFavorite])
+  @@map("beneficiaries")
+}
+
+// ============================================================
+// MODULE 5: SAVINGS & VAULT MANAGEMENT
+// ============================================================
+
+model SavingsVault {
+  id            String      @id @default(uuid())
+  userId        String
+  walletId      String
+  name          String
+  description   String?
+  targetAmount  Decimal     @db.Decimal(18, 4)
+  currentAmount Decimal     @default(0) @db.Decimal(18, 4)
+  currency      Currency
+  status        VaultStatus @default(ACTIVE)
+  isLocked      Boolean     @default(false)
+  lockUntil     DateTime?
+  targetDate    DateTime?
+  iconEmoji     String?
+  colorHex      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet        Wallet                @relation(fields: [walletId], references: [id])
+  savingsRules  SavingsRule[]
+  contributions SavingsContribution[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("savings_vaults")
+}
+
+model SavingsRule {
+  id             String          @id @default(uuid())
+  userId         String
+  walletId       String
+  vaultId        String
+  name           String?
+  type           SavingsRuleType
+  amount         Decimal?        @db.Decimal(18, 4)   // fixed amount
+  percentage     Float?          // % of qualifying transaction
+  triggerCategory SpendingCategory? // only apply to this category (optional)
+  cronExpression String?         // for SCHEDULED type
+  maxPerDay      Decimal?        @db.Decimal(18, 4)
+  isActive       Boolean         @default(true)
+  lastTriggeredAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet       @relation(fields: [walletId], references: [id])
+  vault  SavingsVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("savings_rules")
+}
+
+model SavingsContribution {
+  id             String                    @id @default(uuid())
+  vaultId        String
+  walletId       String
+  transactionId  String?                   @unique
+  amount         Decimal                   @db.Decimal(18, 4)
+  currency       Currency
+  source         SavingsContributionSource
+  note           String?
+  createdAt      DateTime                  @default(now())
+
+  vault       SavingsVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  wallet      Wallet       @relation(fields: [walletId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([vaultId])
+  @@index([walletId])
+  @@index([createdAt])
+  @@map("savings_contributions")
+}
+
+// ============================================================
+// MODULE 6: SMART BUDGETING & EXPENSE CONTROL
+// ============================================================
+
+model Budget {
+  id         String       @id @default(uuid())
+  userId     String
+  name       String
+  period     BudgetPeriod @default(MONTHLY)
+  startDate  DateTime
+  endDate    DateTime?
+  status     BudgetStatus @default(ACTIVE)
+  totalLimit Decimal      @db.Decimal(18, 4)
+  totalSpent Decimal      @default(0) @db.Decimal(18, 4)
+  currency   Currency
+  rolloverUnused Boolean  @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryBudgets CategoryBudget[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("budgets")
+}
+
+model CategoryBudget {
+  id        String           @id @default(uuid())
+  budgetId  String
+  category  SpendingCategory
+  limit     Decimal          @db.Decimal(18, 4)
+  spent     Decimal          @default(0) @db.Decimal(18, 4)
+  alertAt   Float            @default(0.8)   // notify at 80% used
+  alertSent Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, category])
+  @@map("category_budgets")
+}
+
+// ============================================================
+// MODULE 7: VIRTUAL CARD MANAGEMENT
+// ============================================================
+
+model VirtualCard {
+  id              String            @id @default(uuid())
+  userId          String
+  walletId        String
+  cardNumberEnc   String            @unique  // encrypted PAN
+  cardNumberLast4 String
+  maskedNumber    String            // **** **** **** 4242
+  expiryMonth     Int
+  expiryYear      Int
+  cvvEnc          String            // encrypted CVV (rotated dynamically)
+  cvvLastRotatedAt DateTime         @default(now())
+  cardHolder      String
+  type            VirtualCardType   @default(MULTI_USE)
+  status          VirtualCardStatus @default(ACTIVE)
+  spendingLimit   Decimal?          @db.Decimal(18, 4)
+  dailyLimit      Decimal?          @db.Decimal(18, 4)
+  spentToday      Decimal           @default(0) @db.Decimal(18, 4)
+  spentTotal      Decimal           @default(0) @db.Decimal(18, 4)
+  currency        Currency
+  allowOnline     Boolean           @default(true)
+  allowInternational Boolean        @default(false)
+  blockedMccs     String[]          // blocked merchant category codes
+  allowedMerchants String[]         // whitelist (optional)
+  providerCardId  String?           // Flutterwave card id if issued externally
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet           Wallet            @relation(fields: [walletId], references: [id])
+  cardTransactions CardTransaction[]
+
+  @@index([userId])
+  @@index([cardNumberLast4])
+  @@index([status])
+  @@map("virtual_cards")
+}
+
+model CardTransaction {
+  id              String                @id @default(uuid())
+  cardId          String
+  transactionId   String                @unique
+  merchantName    String
+  merchantCity    String?
+  merchantCountry String?
+  mcc             String?               // merchant category code
+  amount          Decimal               @db.Decimal(18, 4)
+  currency        Currency
+  authStatus      CardTransactionStatus @default(AUTHORIZED)
+  authorizedAt    DateTime              @default(now())
+  capturedAt      DateTime?
+  reversedAt      DateTime?
+  declineReason   String?
+  providerAuthId  String?               // Flutterwave auth id
+  createdAt       DateTime              @default(now())
+
+  card        VirtualCard @relation(fields: [cardId], references: [id])
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([cardId])
+  @@index([transactionId])
+  @@map("card_transactions")
+}
+
+// ============================================================
+// MODULE 8: SUBSCRIPTION INTELLIGENCE
+// ============================================================
+
+model Subscription {
+  id               String                      @id @default(uuid())
+  userId           String
+  merchantName     String
+  description      String?
+  amount           Decimal                     @db.Decimal(18, 4)
+  currency         Currency
+  billingCycle     SubscriptionBillingCycle
+  customCycleDays  Int?                        // when billingCycle = CUSTOM
+  status           SubscriptionStatus          @default(ACTIVE)
+  source           SubscriptionDetectionSource @default(USER_CREATED)
+  nextBillingDate  DateTime
+  lastBilledAt     DateTime?
+  cancelledAt      DateTime?
+  iconUrl          String?
+  category         SpendingCategory?
+  reminderDaysBefore Int                       @default(3)
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments SubscriptionPayment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextBillingDate])
+  @@map("subscriptions")
+}
+
+model SubscriptionPayment {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  transactionId  String   @unique
+  amount         Decimal  @db.Decimal(18, 4)
+  currency       Currency
+  billedAt       DateTime
+  createdAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  transaction  Transaction  @relation(fields: [transactionId], references: [id])
+
+  @@index([subscriptionId])
+  @@map("subscription_payments")
+}
+
+// ============================================================
+// MODULE 9: FINANCIAL ANALYTICS & INTELLIGENCE
+// ============================================================
+
+model AnalyticsSnapshot {
+  id                   String            @id @default(uuid())
+  userId               String
+  periodStart          DateTime
+  periodEnd            DateTime
+  totalIncome          Decimal           @db.Decimal(18, 4)
+  totalExpenses        Decimal           @db.Decimal(18, 4)
+  netCashFlow          Decimal           @db.Decimal(18, 4)
+  totalSaved           Decimal           @default(0) @db.Decimal(18, 4)
+  savingsRate          Float             // (totalSaved / totalIncome) * 100
+  topCategory          SpendingCategory?
+  transactionCount     Int               @default(0)
+  financialHealthScore Float?
+  spendingByCategory   Json              // { "FOOD_AND_DINING": 5000, ... }
+  comparedToPrevious   Json?             // % change per category
+  createdAt            DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodStart, periodEnd])
+  @@index([userId])
+  @@index([periodStart])
+  @@map("analytics_snapshots")
+}
+
+model FinancialInsight {
+  id          String    @id @default(uuid())
+  userId      String
+  title       String
+  body        String
+  insightType String    // SPENDING_PATTERN | SAVING_OPPORTUNITY | BUDGET_WARNING | HEALTH_TIP | SUBSCRIPTION_ALERT
+  priority    Int       @default(0)
+  isRead      Boolean   @default(false)
+  isDismissed Boolean   @default(false)
+  expiresAt   DateTime?
+  actionUrl   String?   // deep link to relevant screen
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("financial_insights")
+}
+
+model ExchangeRate {
+  id           String   @id @default(uuid())
+  fromCurrency Currency
+  toCurrency   Currency
+  rate         Decimal  @db.Decimal(18, 6)
+  source       String   // e.g. "openexchangerates" | "manual"
+  fetchedAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([fromCurrency, toCurrency, fetchedAt])
+  @@index([fromCurrency, toCurrency])
+  @@index([expiresAt])
+  @@map("exchange_rates")
+}
+
+// ============================================================
+// MODULE 10: NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  status    NotificationStatus  @default(QUEUED)
+  title     String
+  body      String
+  data      Json?               // contextual metadata (txn id, vault id, etc)
+  actionUrl String?             // deep link
+  isRead    Boolean             @default(false)
+  sentAt    DateTime?
+  deliveredAt DateTime?
+  readAt    DateTime?
+  failedAt  DateTime?
+  failureReason String?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@index([status])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id            String                @id @default(uuid())
+  userId        String                @unique
+  channels      NotificationChannel[] @default([IN_APP, PUSH, EMAIL])
+  mutedTypes    NotificationType[]    @default([])
+  quietFrom     String?               // e.g. "22:00"
+  quietTo       String?               // e.g. "07:00"
+  timezone      String                @default("Africa/Kigali")
+  emailDigest   Boolean               @default(false)  // batch low-priority emails
+  updatedAt     DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ============================================================
+// MODULE 11: FRAUD DETECTION & AUDIT
+// ============================================================
+
+model FraudAlert {
+  id          String           @id @default(uuid())
+  userId      String
+  alertType   String           // UNUSUAL_LOCATION | VELOCITY | ACCOUNT_TAKEOVER | NEW_DEVICE | LARGE_TRANSACTION
+  riskLevel   RiskLevel
+  status      FraudAlertStatus @default(OPEN)
+  description String
+  ipAddress   String?
+  location    String?
+  deviceId    String?
+  resolvedAt  DateTime?
+  resolvedById String?         // admin id
+  notes       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  fraudFlags FraudFlag[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([riskLevel])
+  @@map("fraud_alerts")
+}
+
+model FraudFlag {
+  id            String   @id @default(uuid())
+  transactionId String
+  alertId       String?
+  reason        String
+  riskScore     Float
+  signals       Json?    // detailed signal breakdown for the score
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  alert       FraudAlert? @relation(fields: [alertId], references: [id])
+
+  @@index([transactionId])
+  @@map("fraud_flags")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  userId    String?
+  adminId   String?     // for admin-initiated actions
+  action    AuditAction
+  resource  String?     // e.g. "wallet:abc-123"
+  ipAddress String?
+  userAgent String?
+  deviceId  String?
+  location  String?
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// MODULE 12: OTP & VERIFICATION
+// ============================================================
+
+model OTPCode {
+  id        String   @id @default(uuid())
+  target    String   // email (no SMS — phone OTP delivered via email-as-fallback or skipped)
+  codeHash  String   // hashed code
+  purpose   String   // REGISTRATION | LOGIN | RESET_PASSWORD | TRANSACTION | EMAIL_VERIFY | PIN_RESET
+  attempts  Int      @default(0)
+  maxAttempts Int    @default(5)
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime
+  usedAt    DateTime?
+  metadata  Json?    // e.g. { transactionId: "..." }
+  createdAt DateTime @default(now())
+
+  @@index([target])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+// ============================================================
+// MODULE 13: FLUTTERWAVE / PAYMENT PROVIDER INTEGRATION
+// ============================================================
+
+model LinkedPaymentMethod {
+  id              String              @id @default(uuid())
+  userId          String
+  type            LinkedMethodType
+  provider        PaymentProvider     @default(FLUTTERWAVE)
+  displayName     String              // e.g. "MTN MoMo 0788****12"
+  maskedIdentifier String             // last 4 / masked account number
+  providerTokenEnc String?            // encrypted token from provider (for charge-without-OTP)
+  providerCustomerId String?          // Flutterwave customer reference
+  bankCode        String?
+  bankName        String?
+  expiryMonth     Int?
+  expiryYear      Int?
+  isDefault       Boolean             @default(false)
+  status          LinkedMethodStatus  @default(PENDING)
+  verifiedAt      DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([status])
+  @@map("linked_payment_methods")
+}
+
+model PaymentProviderTransaction {
+  id                 String          @id @default(uuid())
+  transactionId      String          @unique
+  provider           PaymentProvider @default(FLUTTERWAVE)
+  providerReference  String          @unique  // tx_ref / flw_ref
+  providerStatus     String?         // raw provider status string
+  providerCustomerId String?
+  paymentMethod      String?         // mobile_money_rwanda | card | bank_transfer
+  requestPayload     Json
+  responsePayload    Json?
+  webhookConfirmed   Boolean         @default(false)
+  webhookConfirmedAt DateTime?
+  settledAt          DateTime?
+  errorCode          String?
+  errorMessage       String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([providerReference])
+  @@index([provider])
+  @@map("payment_provider_transactions")
+}
+
+model WebhookEvent {
+  id            String             @id @default(uuid())
+  provider      PaymentProvider    @default(FLUTTERWAVE)
+  eventType     String             // e.g. "charge.completed"
+  providerEventId String?          @unique  // dedupe across redeliveries
+  signature     String?            // raw verif-hash header
+  signatureValid Boolean           @default(false)
+  payload       Json
+  status        WebhookEventStatus @default(RECEIVED)
+  processedAt   DateTime?
+  retryCount    Int                @default(0)
+  errorMessage  String?
+  createdAt     DateTime           @default(now())
+
+  @@index([provider])
+  @@index([status])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+// ============================================================
+// MODULE 14: ADMIN / OPERATOR USERS
+// ============================================================
+
+model AdminUser {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          AdminRole @default(SUPPORT)
+  permissions   String[]  @default([])  // fine-grained permission keys
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@map("admin_users")
+}
