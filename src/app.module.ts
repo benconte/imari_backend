@@ -1,12 +1,17 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
 import { configuration } from '@config/configuration';
 import { validateEnv } from '@config/validation.schema';
 import { PrismaModule } from '@common/prisma/prisma.module';
+import { AuthModule } from '@modules/auth/auth.module';
+import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
+import { IdentityModule } from '@modules/identity/identity.module';
+import { MfaModule } from '@modules/mfa/mfa.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -28,16 +33,25 @@ import { AppController } from './app.controller';
         limit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
       },
     ]),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('redis.host', 'localhost'),
+          port: config.get<number>('redis.port', 6379),
+          password: config.get<string | undefined>('redis.password'),
+        },
+      }),
+    }),
     PrismaModule,
-    // Add feature modules here as you build them:
-    // AuthModule, IdentityModule, WalletModule, LedgerModule, TransactionModule, ...
+    AuthModule,
+    MfaModule,
+    IdentityModule,
   ],
   controllers: [AppController],
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}
