@@ -18,6 +18,7 @@ import { decrypt } from '@common/utils/crypto.util';
 import { hashSecret, randomToken, sha256, verifySecret } from '@common/utils/hash.util';
 import { generateOtpCode, generateReference } from '@common/utils/reference.util';
 import { EmailService } from '../../integrations/email/email.service';
+import { WalletService } from '@modules/wallet/wallet.service';
 import { DeviceDto, LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -41,6 +42,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
+    private readonly walletService: WalletService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
@@ -97,6 +99,9 @@ export class AuthService {
       where: { id: user.id },
       data: { isEmailVerified: true, status: UserStatus.ACTIVE, kycTier: 'TIER_1' },
     });
+
+    // Create primary wallet automatically upon activation
+    await this.walletService.ensurePrimaryWallet(user.id);
 
     await this.prisma.auditLog.create({
       data: { userId: user.id, action: AuditAction.KYC_SUBMITTED, metadata: { event: 'EMAIL_VERIFIED' } },

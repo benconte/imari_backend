@@ -43,9 +43,10 @@ export class PrismaService
   /**
    * Run a callback inside a serializable transaction.
    * Required for all ledger and wallet operations to prevent lost-updates.
+   * Note: Using PrismaClient as tx type for full model delegate access in strict TS.
    */
   async runInTransaction<T>(
-    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    fn: (tx: PrismaClient) => Promise<T>,
     options?: {
       isolationLevel?: Prisma.TransactionIsolationLevel;
       maxWait?: number;
