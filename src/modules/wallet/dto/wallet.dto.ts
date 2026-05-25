@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { z } from 'zod';
 import { Currency } from '@prisma/client';
 
@@ -37,12 +38,88 @@ export type P2PTransferDto = z.infer<typeof P2PTransferSchema>;
 
 export const TransactionHistoryQuerySchema = z.object({
   walletId: z.string().uuid().optional(),
-  type: z.string().optional(), // comma separated or single
+  type: z.string().optional(),
   status: z.string().optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().uuid().optional(), // for cursor pagination
+  cursor: z.string().uuid().optional(),
 });
 
 export type TransactionHistoryQuery = z.infer<typeof TransactionHistoryQuerySchema>;
+
+/* ============================================================
+   Swagger DTOs (for beautiful documentation only)
+   These are NOT used for validation — only for Swagger UI.
+   Follows the exact same pattern as auth/identity DTOs.
+============================================================ */
+
+export class SetPinDtoSwagger {
+  @ApiProperty({
+    example: '1234',
+    description: 'Exactly 4 digits. This is your wallet transaction PIN.',
+    minLength: 4,
+    maxLength: 4,
+  })
+  pin: string;
+}
+
+export class ChangePinDtoSwagger {
+  @ApiProperty({
+    example: '1234',
+    description: 'Your current 4-digit wallet PIN',
+    minLength: 4,
+    maxLength: 4,
+  })
+  oldPin: string;
+
+  @ApiProperty({
+    example: '5678',
+    description: 'New 4-digit wallet PIN',
+    minLength: 4,
+    maxLength: 4,
+  })
+  newPin: string;
+}
+
+export class P2PTransferDtoSwagger {
+  @ApiProperty({
+    example: 'IMR-7465291357',
+    description: 'Receiver wallet number (starts with IMR- followed by 10 digits)',
+  })
+  receiverWalletNumber: string;
+
+  @ApiProperty({
+    example: '5000',
+    description: 'Amount to send (string, supports up to 4 decimal places)',
+  })
+  amount: string;
+
+  @ApiProperty({
+    example: 'RWF',
+    enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'],
+    description: 'Currency of the transfer',
+  })
+  currency: Currency;
+
+  @ApiPropertyOptional({
+    example: 'Monthly support',
+    description: 'Optional description for the transaction',
+    maxLength: 200,
+  })
+  description?: string;
+
+  @ApiProperty({
+    example: '1234',
+    description: 'Your 4-digit wallet PIN (required for any fund movement)',
+    minLength: 4,
+    maxLength: 4,
+  })
+  pin: string;
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'Optional idempotency key (UUID) for safe retries',
+  })
+  idempotencyKey?: string;
+}

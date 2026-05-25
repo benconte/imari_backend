@@ -73,3 +73,14 @@ export function formatMoney(
 ): string {
   return `${value.toFixed(decimals)} ${currency}`;
 }
+
+/**
+ * Convert Prisma.Decimal (or number/string) to a clean string for API responses.
+ * This prevents the ugly { s, e, d } object from leaking to clients.
+ */
+export function toDecimalString(
+  value: Prisma.Decimal | number | string | null | undefined,
+): string {
+  if (value === null || value === undefined) return '0';
+  return new Prisma.Decimal(value).toString();
+}
