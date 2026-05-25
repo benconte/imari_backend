@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/public.decorator';
 import { ZodValidationPipe } from '@common/pipes/zod-validation.pipe';
+import { Currency } from '@prisma/client';
 import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 import { AuthUser } from '@modules/auth/strategies/jwt.strategy';
 import { WalletService } from './wallet.service';
@@ -25,22 +26,75 @@ import {
   ChangePinDto,
   ChangePinDtoSwagger,
   ChangePinSchema,
+  CreateWalletDto,
+  CreateWalletDtoSwagger,
+  CreateWalletSchema,
   P2PTransferDto,
   P2PTransferDtoSwagger,
   P2PTransferSchema,
   SetPinDto,
   SetPinDtoSwagger,
   SetPinSchema,
+  SetPrimaryWalletDto,
+  SetPrimaryWalletDtoSwagger,
+  SetPrimaryWalletSchema,
   TransactionHistoryQuery,
   TransactionHistoryQuerySchema,
 } from './dto/wallet.dto';
 
 @ApiTags('wallet')
-@ApiBearerAuth()                    // ← This makes the lock icon appear
+@ApiBearerAuth()                    
 @Controller('wallet')
 @UseGuards(JwtAuthGuard)
 export class WalletController {
   constructor(private readonly walletService: WalletService) {}
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new wallet in a different currency' })
+  @ApiBody({
+    type: CreateWalletDtoSwagger,
+    examples: {
+      usd: { summary: 'Create USD wallet', value: { currency: 'USD' } },
+      eur: { summary: 'Create EUR wallet', value: { currency: 'EUR' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Wallet created successfully' })
+  @ApiResponse({ status: 409, description: 'You already have a wallet in this currency' })
+  async createWallet(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CreateWalletSchema)) dto: CreateWalletDto,
+  ) {
+    return this.walletService.createWallet(user.userId, dto.currency);
+  }
+
+  @Get('currencies')
+  @ApiOperation({ summary: 'Get list of supported currencies (for dropdowns)' })
+  @ApiResponse({ status: 200, description: 'List of available currencies' })
+  getSupportedCurrencies() {
+    // Returns all currencies from the Prisma enum
+    return Object.values(Currency);
+  }
+
+  @Post('set-primary')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set one of your wallets as the primary wallet' })
+  @ApiBody({
+    type: SetPrimaryWalletDtoSwagger,
+    examples: {
+      example: {
+        summary: 'Set a wallet as primary',
+        value: { walletId: '07c03b10-cde1-41d5-a2be-8ab8978b51eb' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Primary wallet updated' })
+  async setPrimaryWallet(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SetPrimaryWalletSchema)) dto: SetPrimaryWalletDto,
+  ) {
+    return this.walletService.setPrimaryWallet(user.userId, dto.walletId);
+  }
 
   @Get('me')
   @ApiOperation({ summary: 'Get all wallets for the current user' })

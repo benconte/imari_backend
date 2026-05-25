@@ -10,28 +10,40 @@ import { PrismaService } from '@common/prisma/prisma.service';
 import { hashSecret, verifySecret } from '@common/utils/hash.util';
 import { generateTransactionRef, generateWalletNumber } from '@common/utils/reference.util';
 import { toDecimalString } from '@common/utils/money.util';
+import { KYCTier } from '@prisma/client';
 
 const DEFAULT_DAILY_LIMIT = '500000';
 const DEFAULT_MONTHLY_LIMIT = '5000000';
+
+// KYC Tier based currency restrictions (professional fintech control)
+const ALLOWED_CURRENCIES_BY_TIER: Record<KYCTier, Currency[]> = {
+  TIER_0: [Currency.RWF],
+  TIER_1: [Currency.RWF],
+  TIER_2: [Currency.RWF, Currency.USD, Currency.EUR, Currency.KES],
+  TIER_3: [Currency.RWF, Currency.USD, Currency.EUR, Currency.KES, Currency.UGX, Currency.TZS],
+};
 
 @Injectable()
 export class WalletService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Automatically creates the user's first (primary) RWF wallet after email verification.
+   * Uses the new unique constraint to safely handle creation.
+   */
   async ensurePrimaryWallet(userId: string) {
+    // Check if user already has any wallet (primary or not)
     const existing = await this.prisma.wallet.findFirst({
-      where: { userId, isPrimary: true },
+      where: { userId },
     });
 
     if (existing) return existing;
 
-    const walletNumber = generateWalletNumber();
-
     const wallet = await this.prisma.wallet.create({
       data: {
         userId,
-        walletNumber,
-        currency: Currency.RWF, 
+        currency: Currency.RWF,
+        walletNumber: generateWalletNumber(),
         isPrimary: true,
         dailyLimit: new Prisma.Decimal(DEFAULT_DAILY_LIMIT),
         monthlyLimit: new Prisma.Decimal(DEFAULT_MONTHLY_LIMIT),
@@ -43,10 +55,17 @@ export class WalletService {
         userId,
         action: AuditAction.WALLET_CREATED,
         resource: `wallet:${wallet.id}`,
+        metadata: { reason: 'auto_on_activation' },
       },
     });
 
-    return wallet;
+    return {
+      ...wallet,
+      balance: toDecimalString(wallet.balance),
+      availableBalance: toDecimalString(wallet.availableBalance),
+      dailyLimit: toDecimalString(wallet.dailyLimit),
+      monthlyLimit: toDecimalString(wallet.monthlyLimit),
+    };
   }
 
   async getUserWallets(userId: string) {
@@ -76,6 +95,114 @@ export class WalletService {
       dailyLimit: toDecimalString(w.dailyLimit),
       monthlyLimit: toDecimalString(w.monthlyLimit),
     }));
+  }
+
+  /**
+   * Manually create an additional wallet for a different currency.
+   * Enforces: one wallet per currency per user.
+   */
+  async createWallet(userId: string, currency: Currency) {
+    // Get user's KYC tier for currency restriction
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { kycTier: true },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const allowedCurrencies = ALLOWED_CURRENCIES_BY_TIER[user.kycTier] || [Currency.RWF];
+
+    if (!allowedCurrencies.includes(currency)) {
+      throw new BadRequestException(
+        `Your current KYC tier (${user.kycTier}) does not allow creating a ${currency} wallet. ` +
+        `Allowed currencies: ${allowedCurrencies.join(', ')}`,
+      );
+    }
+
+    // Check if user already has a wallet in this currency (enforced by DB unique too)
+    const existing = await this.prisma.wallet.findFirst({
+      where: { userId, currency },
+    });
+
+    if (existing) {
+      throw new ConflictException(`You already have a ${currency} wallet`);
+    }
+
+    const wallet = await this.prisma.wallet.create({
+      data: {
+        userId,
+        currency,
+        walletNumber: generateWalletNumber(),
+        isPrimary: false,
+        dailyLimit: new Prisma.Decimal(DEFAULT_DAILY_LIMIT),
+        monthlyLimit: new Prisma.Decimal(DEFAULT_MONTHLY_LIMIT),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: AuditAction.WALLET_CREATED,
+        resource: `wallet:${wallet.id}`,
+        metadata: { currency, kycTier: user.kycTier },
+      },
+    });
+
+    return {
+      ...wallet,
+      balance: toDecimalString(wallet.balance),
+      availableBalance: toDecimalString(wallet.availableBalance),
+      dailyLimit: toDecimalString(wallet.dailyLimit),
+      monthlyLimit: toDecimalString(wallet.monthlyLimit),
+    };
+  }
+
+  /**
+   * Set a specific wallet as the user's primary wallet.
+   * Only one wallet can be primary at any time.
+   */
+  async setPrimaryWallet(userId: string, walletId: string) {
+    const wallet = await this.prisma.wallet.findFirst({
+      where: { id: walletId, userId },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found or does not belong to you');
+    }
+
+    if (wallet.isPrimary) {
+      return { message: 'This wallet is already your primary wallet' };
+    }
+
+    if (wallet.status !== WalletStatus.ACTIVE) {
+      throw new BadRequestException('Cannot set an inactive wallet as primary');
+    }
+
+    // Transaction to ensure only one primary
+    await this.prisma.runInTransaction(async (tx) => {
+      // Remove primary from all user's wallets
+      await tx.wallet.updateMany({
+        where: { userId },
+        data: { isPrimary: false },
+      });
+
+      // Set the chosen one as primary
+      await tx.wallet.update({
+        where: { id: walletId },
+        data: { isPrimary: true },
+      });
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: AuditAction.PIN_CHANGE, // TODO: better to add WALLET_PRIMARY_CHANGED
+        resource: `wallet:${walletId}`,
+        metadata: { previousPrimary: 'updated', newPrimary: walletId },
+      },
+    });
+
+    return { message: 'Primary wallet updated successfully' };
   }
 
   async getWalletById(userId: string, walletId: string) {
@@ -340,7 +467,7 @@ export class WalletService {
       });
     }
 
-    // Audit
+   
     await this.prisma.auditLog.create({
       data: {
         userId: senderUserId,

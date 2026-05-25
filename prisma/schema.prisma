@@ -536,6 +536,7 @@ model Wallet {
   @@index([userId])
   @@index([walletNumber])
   @@index([status])
+  @@unique([userId, currency])   // One wallet per currency per user (no duplicates)
   @@map("wallets")
 }
 
