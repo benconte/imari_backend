@@ -340,7 +340,7 @@ export class WalletService {
       });
     }
 
-    // Audit
+   
     await this.prisma.auditLog.create({
       data: {
         userId: senderUserId,

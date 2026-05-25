@@ -36,7 +36,7 @@ import {
 } from './dto/wallet.dto';
 
 @ApiTags('wallet')
-@ApiBearerAuth()                    // ← This makes the lock icon appear
+@ApiBearerAuth()                    
 @Controller('wallet')
 @UseGuards(JwtAuthGuard)
 export class WalletController {
