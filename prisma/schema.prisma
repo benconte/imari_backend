@@ -22,9 +22,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Connection URL is configured in prisma.config.ts (for the CLI)
+// and passed via PrismaPg adapter in src/common/prisma/prisma.service.ts (runtime).
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================================

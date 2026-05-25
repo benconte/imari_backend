@@ -5,6 +5,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
+import {
+  createPrismaAdapter,
+  prismaClientOptions,
+  SLOW_QUERY_THRESHOLD_MS,
+} from '@config/prisma';
 
 @Injectable()
 export class PrismaService
@@ -14,26 +19,17 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
-    super({
-      log:
-        process.env.NODE_ENV === 'development'
-          ? [
-              { emit: 'event', level: 'query' },
-              { emit: 'event', level: 'warn' },
-              { emit: 'event', level: 'error' },
-            ]
-          : [{ emit: 'event', level: 'error' }],
-    });
+    super({ ...prismaClientOptions, adapter: createPrismaAdapter() });
   }
 
   async onModuleInit() {
     await this.$connect();
-    this.logger.log('✅ Connected to PostgreSQL');
+    this.logger.log('Connected to PostgreSQL');
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).$on('query', (e: Prisma.QueryEvent) => {
-        if (e.duration > 100) {
+        if (e.duration > SLOW_QUERY_THRESHOLD_MS) {
           this.logger.warn(`Slow query (${e.duration}ms): ${e.query}`);
         }
       });
@@ -42,15 +38,11 @@ export class PrismaService
 
   async onModuleDestroy() {
     await this.$disconnect();
-    this.logger.log('🔌 Disconnected from PostgreSQL');
   }
 
   /**
-   * Run a callback inside an interactive transaction.
-   * Use this for any operation that touches the ledger or multiple wallets.
-   *
-   * Default isolation is Serializable: the safest option for money movement,
-   * preventing the lost-update and write-skew anomalies that lose customer funds.
+   * Run a callback inside a serializable transaction.
+   * Required for all ledger and wallet operations to prevent lost-updates.
    */
   async runInTransaction<T>(
     fn: (tx: Prisma.TransactionClient) => Promise<T>,

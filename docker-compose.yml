@@ -39,6 +39,36 @@ services:
       - "1025:1025"  # SMTP
       - "8025:8025"  # Web UI -> http://localhost:8025
 
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: imari-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${BACKEND_PORT:-3000}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-imari}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-imari_dev_password}
+      DB_NAME: ${POSTGRES_DB:-imari_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy 
+      mailhog:
+        condition: service_healthy
+             
+
 volumes:
   postgres_data:
   redis_data:
