@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { z } from 'zod';
 
 export const VerifyEmailSchema = z.object({
@@ -6,3 +7,20 @@ export const VerifyEmailSchema = z.object({
 });
 
 export type VerifyEmailDto = z.infer<typeof VerifyEmailSchema>;
+
+/**
+ * DTO class for Swagger documentation (not used for validation)
+ */
+export class VerifyEmailDtoSwagger {
+  @ApiProperty({
+    example: 'john@example.com',
+    description: 'Email address used during registration',
+  })
+  email: string;
+
+  @ApiProperty({
+    example: '123456',
+    description: 'One-time password (6 digits) sent to email',
+  })
+  otp: string;
+}
