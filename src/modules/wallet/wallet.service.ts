@@ -9,6 +9,7 @@ import { Prisma, PrismaClient, Currency, TransactionType, TransactionStatus, Tra
 import { PrismaService } from '@common/prisma/prisma.service';
 import { hashSecret, verifySecret } from '@common/utils/hash.util';
 import { generateTransactionRef, generateWalletNumber } from '@common/utils/reference.util';
+import { toDecimalString } from '@common/utils/money.util';
 
 const DEFAULT_DAILY_LIMIT = '500000';
 const DEFAULT_MONTHLY_LIMIT = '5000000';
@@ -17,10 +18,6 @@ const DEFAULT_MONTHLY_LIMIT = '5000000';
 export class WalletService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Ensures a primary wallet exists for the user.
-   * Called after user activation. Idempotent.
-   */
   async ensurePrimaryWallet(userId: string) {
     const existing = await this.prisma.wallet.findFirst({
       where: { userId, isPrimary: true },
@@ -34,7 +31,7 @@ export class WalletService {
       data: {
         userId,
         walletNumber,
-        currency: Currency.RWF, // default; can be updated later
+        currency: Currency.RWF, 
         isPrimary: true,
         dailyLimit: new Prisma.Decimal(DEFAULT_DAILY_LIMIT),
         monthlyLimit: new Prisma.Decimal(DEFAULT_MONTHLY_LIMIT),
@@ -53,7 +50,7 @@ export class WalletService {
   }
 
   async getUserWallets(userId: string) {
-    return this.prisma.wallet.findMany({
+    const wallets = await this.prisma.wallet.findMany({
       where: { userId },
       select: {
         id: true,
@@ -70,6 +67,15 @@ export class WalletService {
       },
       orderBy: { isPrimary: 'desc' },
     });
+
+    // Convert Prisma Decimal objects to clean strings (prevents ugly {s,e,d} in JSON)
+    return wallets.map((w) => ({
+      ...w,
+      balance: toDecimalString(w.balance),
+      availableBalance: toDecimalString(w.availableBalance),
+      dailyLimit: toDecimalString(w.dailyLimit),
+      monthlyLimit: toDecimalString(w.monthlyLimit),
+    }));
   }
 
   async getWalletById(userId: string, walletId: string) {
@@ -80,9 +86,7 @@ export class WalletService {
     return wallet;
   }
 
-  /**
-   * Set initial wallet PIN (one-time).
-   */
+ 
   async setPin(userId: string, plainPin: string) {
     const existing = await this.prisma.walletPin.findUnique({ where: { userId } });
     if (existing) {
@@ -102,9 +106,6 @@ export class WalletService {
     return { message: 'Wallet PIN set successfully' };
   }
 
-  /**
-   * Change existing PIN (requires old PIN).
-   */
   async changePin(userId: string, oldPin: string, newPin: string) {
     const pinRecord = await this.prisma.walletPin.findUnique({ where: { userId } });
     if (!pinRecord) throw new NotFoundException('No wallet PIN set');
@@ -147,10 +148,6 @@ export class WalletService {
     return { message: 'Wallet PIN changed successfully' };
   }
 
-  /**
-   * Core professional P2P transfer with double-entry ledger.
-   * All balance changes MUST go through this or similar internal methods.
-   */
   async p2pTransfer(
     senderUserId: string,
     dto: {
@@ -162,7 +159,7 @@ export class WalletService {
       pin: string;
     },
   ) {
-    // 1. Idempotency check (early return if already processed)
+ 
     if (dto.idempotencyKey) {
       const existing = await this.prisma.idempotencyKey.findUnique({
         where: { key: dto.idempotencyKey },
