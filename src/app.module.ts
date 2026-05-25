@@ -12,6 +12,7 @@ import { AuthModule } from '@modules/auth/auth.module';
 import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 import { IdentityModule } from '@modules/identity/identity.module';
 import { MfaModule } from '@modules/mfa/mfa.module';
+import { WalletModule } from '@modules/wallet/wallet.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -47,6 +48,7 @@ import { AppController } from './app.controller';
     AuthModule,
     MfaModule,
     IdentityModule,
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [
