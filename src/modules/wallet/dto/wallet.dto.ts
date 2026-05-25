@@ -123,3 +123,34 @@ export class P2PTransferDtoSwagger {
   })
   idempotencyKey?: string;
 }
+
+export const CreateWalletSchema = z.object({
+  currency: z.nativeEnum(Currency, {
+    errorMap: () => ({ message: 'Invalid currency. Must be one of: RWF, USD, EUR, KES, UGX, TZS' }),
+  }),
+});
+
+export type CreateWalletDto = z.infer<typeof CreateWalletSchema>;
+
+export class CreateWalletDtoSwagger {
+  @ApiProperty({
+    example: 'USD',
+    enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'],
+    description: 'Currency for the new wallet. You can have only one wallet per currency.',
+  })
+  currency: Currency;
+}
+
+export const SetPrimaryWalletSchema = z.object({
+  walletId: z.string().uuid(),
+});
+
+export type SetPrimaryWalletDto = z.infer<typeof SetPrimaryWalletSchema>;
+
+export class SetPrimaryWalletDtoSwagger {
+  @ApiProperty({
+    example: '07c03b10-cde1-41d5-a2be-8ab8978b51eb',
+    description: 'UUID of the wallet you want to set as your primary wallet',
+  })
+  walletId: string;
+}
