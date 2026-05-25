@@ -2,9 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
-  TooManyRequestsException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -305,7 +306,7 @@ export class AuthService {
     if (!record) throw new BadRequestException('No verification code found for this email');
     if (record.expiresAt < new Date()) throw new BadRequestException('Verification code has expired');
     if (record.attempts >= record.maxAttempts)
-      throw new TooManyRequestsException('Too many failed OTP attempts. Request a new code.');
+      throw new HttpException('Too many failed OTP attempts. Request a new code.', HttpStatus.TOO_MANY_REQUESTS);
 
     const valid = record.codeHash === sha256(code);
 
@@ -323,8 +324,9 @@ export class AuthService {
       where: { identifier, success: false, createdAt: { gte: since } },
     });
     if (count >= MAX_LOGIN_ATTEMPTS) {
-      throw new TooManyRequestsException(
+      throw new HttpException(
         'Too many failed login attempts. Please try again in 15 minutes.',
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
   }
