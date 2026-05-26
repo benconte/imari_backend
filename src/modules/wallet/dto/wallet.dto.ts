@@ -154,3 +154,59 @@ export class SetPrimaryWalletDtoSwagger {
   })
   walletId: string;
 }
+
+/* ------------------ Deposit & Withdraw DTOs ------------------ */
+
+export const DepositSchema = z.object({
+  amount: z
+    .string()
+    .regex(/^\d+(\.\d{1,4})?$/, 'Amount must be a positive decimal with max 4 places'),
+  currency: z.nativeEnum(Currency).default(Currency.RWF),
+  idempotencyKey: z.string().uuid().optional(),
+  providerReference: z.string().max(200).optional(),
+});
+
+export type DepositDto = z.infer<typeof DepositSchema>;
+
+export class DepositDtoSwagger {
+  @ApiProperty({ example: '10000', description: 'Amount to deposit (string, up to 4 decimals)' })
+  amount: string;
+
+  @ApiProperty({ example: 'RWF', enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'] })
+  currency: Currency;
+
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Optional idempotency UUID' })
+  idempotencyKey?: string;
+
+  @ApiPropertyOptional({ example: 'FLW-1234-REF', description: 'Provider reference (optional)' })
+  providerReference?: string;
+}
+
+export const WithdrawSchema = z.object({
+  amount: z
+    .string()
+    .regex(/^\d+(\.\d{1,4})?$/, 'Amount must be a positive decimal with max 4 places'),
+  currency: z.nativeEnum(Currency).default(Currency.RWF),
+  pin: z.string().length(4).regex(/^\d{4}$/),
+  idempotencyKey: z.string().uuid().optional(),
+  description: z.string().max(200).optional(),
+});
+
+export type WithdrawDto = z.infer<typeof WithdrawSchema>;
+
+export class WithdrawDtoSwagger {
+  @ApiProperty({ example: '5000', description: 'Amount to withdraw (string)' })
+  amount: string;
+
+  @ApiProperty({ example: 'RWF', enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'] })
+  currency: Currency;
+
+  @ApiProperty({ example: '1234', description: 'Your 4-digit wallet PIN', minLength: 4, maxLength: 4 })
+  pin: string;
+
+  @ApiPropertyOptional({ example: 'Payout to bank', description: 'Optional description for the withdrawal' })
+  description?: string;
+
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Optional idempotency UUID' })
+  idempotencyKey?: string;
+}

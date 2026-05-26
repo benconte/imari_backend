@@ -8,6 +8,7 @@ import {
   Put,
   Query,
   UseGuards,
+  Param,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -29,6 +30,8 @@ import {
   CreateWalletDto,
   CreateWalletDtoSwagger,
   CreateWalletSchema,
+  DepositDtoSwagger,
+  DepositSchema,
   P2PTransferDto,
   P2PTransferDtoSwagger,
   P2PTransferSchema,
@@ -40,7 +43,10 @@ import {
   SetPrimaryWalletSchema,
   TransactionHistoryQuery,
   TransactionHistoryQuerySchema,
+  WithdrawDtoSwagger,
+  WithdrawSchema,
 } from './dto/wallet.dto';
+
 
 @ApiTags('wallet')
 @ApiBearerAuth()                    
@@ -72,7 +78,7 @@ export class WalletController {
   @ApiOperation({ summary: 'Get list of supported currencies (for dropdowns)' })
   @ApiResponse({ status: 200, description: 'List of available currencies' })
   getSupportedCurrencies() {
-    // Returns all currencies from the Prisma enum
+  
     return Object.values(Currency);
   }
 
@@ -102,7 +108,7 @@ export class WalletController {
   async getMyWallets(@CurrentUser() user: AuthUser) {
     return this.walletService.getUserWallets(user.userId);
   }
-
+  
   @Post('pin')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Set initial 4-digit wallet PIN (one time only)' })
@@ -168,6 +174,44 @@ export class WalletController {
     @Body(new ZodValidationPipe(P2PTransferSchema)) dto: P2PTransferDto,
   ) {
     return this.walletService.p2pTransfer(user.userId, dto);
+  }
+
+  @Post(':id/deposit')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Initiate a deposit to the specified wallet' })
+  @ApiBody({ type: DepositDtoSwagger, examples: { example: { summary: 'Deposit', value: { amount: '10000', currency: 'RWF', idempotencyKey: '550e8400-e29b-41d4-a716-446655440000' } } } })
+  @ApiResponse({ status: 202, description: 'Deposit accepted and processing' })
+  async deposit(
+    @CurrentUser() user: AuthUser,
+    @Param('id') walletId: string,
+    @Body(new ZodValidationPipe(DepositSchema)) dto: any,
+  ) {
+    return this.walletService.initiateDeposit(user.userId, walletId, dto);
+  }
+
+  @Post(':id/withdraw')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Initiate a withdrawal from the specified wallet' })
+  @ApiBody({ type: WithdrawDtoSwagger, examples: { example: { summary: 'Withdraw', value: { amount: '5000', currency: 'RWF', pin: '1234' } } } })
+  @ApiResponse({ status: 202, description: 'Withdrawal accepted and processing' })
+  @ApiResponse({ status: 401, description: 'Invalid PIN or wallet locked' })
+  async withdraw(
+    @CurrentUser() user: AuthUser,
+    @Param('id') walletId: string,
+    @Body(new ZodValidationPipe(WithdrawSchema)) dto: any,
+  ) {
+    return this.walletService.initiateWithdraw(user.userId, walletId, dto);
+  }
+
+  @Post('test-complete/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Test helper: manually complete a pending deposit/withdraw transaction (TEST ONLY while waiting for real providers)' })
+  @ApiResponse({ status: 200, description: 'Transaction finalized or already processed' })
+  async complete(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.walletService.completeTransaction(user.userId, id);
   }
 
   @Get('transactions')

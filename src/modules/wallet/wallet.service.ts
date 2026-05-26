@@ -213,7 +213,147 @@ export class WalletService {
     return wallet;
   }
 
- 
+  // Initiate deposit: create PENDING transaction and ledger entries; provider callback will finalize
+  async initiateDeposit(userId: string, walletId: string, dto: any) {
+    const wallet = await this.getWalletById(userId, walletId);
+
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.lte(0)) throw new BadRequestException('Amount must be positive');
+
+    if (wallet.currency !== dto.currency) throw new BadRequestException('Currency mismatch');
+
+    const result = await this.prisma.runInTransaction(async (tx) => {
+      const transaction = await tx.transaction.create({
+        data: {
+          reference: generateTransactionRef(),
+          idempotencyKey: dto.idempotencyKey,
+          receiverId: userId,
+          receiverWalletId: wallet.id,
+          type: TransactionType.DEPOSIT,
+          direction: TransactionDirection.CREDIT,
+          amount,
+          currency: dto.currency,
+          fee: new Prisma.Decimal(0),
+          netAmount: amount,
+          status: TransactionStatus.PENDING,
+          description: 'Deposit initiated',
+        },
+      });
+
+      // Ledger: credit system suspense (provider in-transit) and create a corresponding external provider entry
+      await tx.ledgerEntry.createMany({
+        data: [
+          {
+            transactionId: transaction.id,
+            entryType: LedgerEntryType.SYSTEM_SUSPENSE,
+            accountKey: 'system:suspense:provider',
+            direction: TransactionDirection.CREDIT,
+            amount,
+            currency: dto.currency,
+            balanceBefore: null,
+            balanceAfter: null,
+            description: 'Incoming deposit pending provider settlement',
+          },
+          {
+            transactionId: transaction.id,
+            entryType: LedgerEntryType.EXTERNAL_PROVIDER,
+            accountKey: `provider:${dto.providerReference ?? 'unknown'}`,
+            direction: TransactionDirection.DEBIT,
+            amount,
+            currency: dto.currency,
+            balanceBefore: null,
+            balanceAfter: null,
+            description: 'Provider liability for incoming deposit',
+          },
+        ],
+      });
+
+      return { transactionId: transaction.id, reference: transaction.reference };
+    });
+
+    await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'DEPOSIT', amount: dto.amount } } });
+
+    return result;
+  }
+
+  // Initiate withdraw: verify PIN, limits, create PENDING transaction and ledger holds
+  async initiateWithdraw(userId: string, walletId: string, dto: any) {
+    // Verify PIN
+    const pinRecord = await this.prisma.walletPin.findUnique({ where: { userId } });
+    if (!pinRecord) throw new ForbiddenException('Wallet PIN not set');
+    const pinValid = await verifySecret(pinRecord.pinHash, dto.pin);
+    if (!pinValid) {
+      await this.handleFailedPinAttempt(userId, pinRecord);
+      throw new ForbiddenException('Invalid wallet PIN');
+    }
+
+    const wallet = await this.getWalletById(userId, walletId);
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.lte(0)) throw new BadRequestException('Amount must be positive');
+    if (wallet.currency !== dto.currency) throw new BadRequestException('Currency mismatch');
+    if (wallet.isLocked) throw new ForbiddenException('Wallet is locked');
+
+    // Check available balance
+    if (wallet.availableBalance.lt(amount)) throw new BadRequestException('Insufficient available balance');
+
+    const result = await this.prisma.runInTransaction(async (tx) => {
+      const transaction = await tx.transaction.create({
+        data: {
+          reference: generateTransactionRef(),
+          idempotencyKey: dto.idempotencyKey,
+          senderId: userId,
+          senderWalletId: wallet.id,
+          type: TransactionType.WITHDRAWAL,
+          direction: TransactionDirection.DEBIT,
+          amount,
+          currency: dto.currency,
+          fee: new Prisma.Decimal(0),
+          netAmount: amount,
+          status: TransactionStatus.PENDING,
+          description: dto.description ?? 'Withdrawal initiated',
+        },
+      });
+
+      // Ledger: debit user wallet (hold) and credit system suspense
+      await tx.ledgerEntry.createMany({
+        data: [
+          {
+            transactionId: transaction.id,
+            entryType: LedgerEntryType.USER_WALLET,
+            walletId: wallet.id,
+            accountKey: `user:wallet:${wallet.id}`,
+            direction: TransactionDirection.DEBIT,
+            amount,
+            currency: dto.currency,
+            balanceBefore: wallet.balance,
+            balanceAfter: wallet.balance.sub(amount),
+            description: 'Withdrawal hold - pending provider payout',
+          },
+          {
+            transactionId: transaction.id,
+            entryType: LedgerEntryType.SYSTEM_SUSPENSE,
+            accountKey: 'system:suspense:provider',
+            direction: TransactionDirection.CREDIT,
+            amount,
+            currency: dto.currency,
+            balanceBefore: null,
+            balanceAfter: null,
+            description: 'Funds reserved for withdrawal',
+          },
+        ],
+      });
+
+      // Update wallet availableBalance to reflect hold
+      await tx.wallet.update({ where: { id: wallet.id }, data: { availableBalance: wallet.availableBalance.sub(amount) } });
+
+      return { transactionId: transaction.id, reference: transaction.reference };
+    });
+
+    await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'WITHDRAWAL', amount: dto.amount } } });
+
+    return result;
+  }
+
   async setPin(userId: string, plainPin: string) {
     const existing = await this.prisma.walletPin.findUnique({ where: { userId } });
     if (existing) {
@@ -506,6 +646,84 @@ export class WalletService {
   /**
    * Get paginated transaction history for user's wallets.
    */
+  async completeTransaction(userId: string, transactionId: string) {
+    // Only allow owners of the transaction (sender or receiver) or system roles in future
+    const txRecord = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+    if (!txRecord) throw new NotFoundException('Transaction not found');
+
+    if (txRecord.status !== TransactionStatus.PENDING) {
+      return { message: 'Transaction already processed', status: txRecord.status };
+    }
+
+    // Only the related user may complete (basic check)
+    if (txRecord.receiverId !== userId && txRecord.senderId !== userId) {
+      throw new ForbiddenException('Not authorized to complete this transaction');
+    }
+
+    // Finalize based on type
+    if (txRecord.type === TransactionType.DEPOSIT) {
+      // Move funds from SYSTEM_SUSPENSE -> USER_WALLET
+      await this.prisma.runInTransaction(async (tx) => {
+        const wallet = await tx.wallet.findUniqueOrThrow({ where: { id: txRecord.receiverWalletId! } });
+
+        // create ledger entry crediting user wallet
+        await tx.ledgerEntry.create({
+          data: {
+            transactionId: txRecord.id,
+            entryType: LedgerEntryType.USER_WALLET,
+            walletId: wallet.id,
+            accountKey: `user:wallet:${wallet.id}`,
+            direction: TransactionDirection.CREDIT,
+            amount: txRecord.amount,
+            currency: txRecord.currency,
+            balanceBefore: wallet.balance,
+            balanceAfter: wallet.balance.add(txRecord.amount),
+            description: 'Deposit settled - credit user wallet',
+          },
+        });
+
+        // Update wallet balances
+        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: wallet.balance.add(txRecord.amount), availableBalance: wallet.availableBalance.add(txRecord.amount) } });
+
+        // mark transaction completed
+        await tx.transaction.update({ where: { id: txRecord.id }, data: { status: TransactionStatus.COMPLETED, processedAt: new Date() } });
+      });
+
+      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'DEPOSIT', amount: txRecord.amount.toString() } } });
+
+      return { message: 'Deposit completed', transactionId: txRecord.id };
+    }
+
+    if (txRecord.type === TransactionType.WITHDRAWAL) {
+      // Simulate provider payout success: finalize transaction and remove suspense
+      await this.prisma.runInTransaction(async (tx) => {
+        const wallet = await tx.wallet.findUniqueOrThrow({ where: { id: txRecord.senderWalletId! } });
+
+        // create ledger entry to record external provider payout debit (already had hold entry earlier)
+        await tx.ledgerEntry.create({
+          data: {
+            transactionId: txRecord.id,
+            entryType: LedgerEntryType.EXTERNAL_PROVIDER,
+            accountKey: 'provider:manual-payout',
+            direction: TransactionDirection.DEBIT,
+            amount: txRecord.amount,
+            currency: txRecord.currency,
+            description: 'Provider payout completed',
+          },
+        });
+
+        // mark transaction completed
+        await tx.transaction.update({ where: { id: txRecord.id }, data: { status: TransactionStatus.COMPLETED, processedAt: new Date() } });
+      });
+
+      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'WITHDRAWAL', amount: txRecord.amount.toString() } } });
+
+      return { message: 'Withdrawal completed', transactionId: txRecord.id };
+    }
+
+    throw new BadRequestException('Unsupported transaction type for manual completion');
+  }
+
   async getTransactionHistory(userId: string, query: any) {
     const where: any = {
       OR: [
