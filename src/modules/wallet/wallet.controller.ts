@@ -176,6 +176,13 @@ export class WalletController {
     return this.walletService.p2pTransfer(user.userId, dto);
   }
 
+  @Get('transfer/lookup')
+  @ApiOperation({ summary: 'Lookup recipient by wallet number (returns basic info & fingerprint)' })
+  @ApiResponse({ status: 200, description: 'Recipient details' })
+  async lookupRecipient(@CurrentUser() user: AuthUser, @Query('walletNumber') walletNumber: string) {
+    return this.walletService.lookupRecipient(user.userId, walletNumber);
+  }
+
   @Post(':id/deposit')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: 'Initiate a deposit to the specified wallet' })

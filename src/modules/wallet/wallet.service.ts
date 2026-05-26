@@ -479,6 +479,39 @@ export class WalletService {
     return { message: 'Wallet PIN changed successfully' };
   }
 
+  async lookupRecipient(requestingUserId: string, walletNumber: string) {
+    const wallet = await this.prisma.wallet.findUnique({ where: { walletNumber }, include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } } });
+    if (!wallet) throw new NotFoundException('Recipient not found');
+    if (wallet.status !== WalletStatus.ACTIVE || wallet.isLocked) throw new BadRequestException('Recipient wallet is not active');
+
+    const u = (wallet as any).user;
+    const displayName = u ? `${u.firstName} ${u.lastName}` : null;
+    const maskEmail = (e: string | null) => {
+      if (!e) return null;
+      const parts = e.split('@');
+      if (parts[0].length <= 2) return parts[0][0] + '***@' + parts[1];
+      return parts[0][0] + '***' + parts[0].slice(-1) + '@' + parts[1];
+    };
+    const maskPhone = (p: string | null) => {
+      if (!p) return null;
+      return p.replace(/.(?=.{4})/g, '*');
+    };
+
+    const maskedEmail = maskEmail(u?.email ?? null);
+    const maskedPhone = maskPhone(u?.phone ?? null);
+    const fingerprint = createHash('sha256').update(`${wallet.id}:${u?.id ?? ''}:${wallet.walletNumber}`).digest('hex');
+
+    return {
+      walletId: wallet.id,
+      walletNumber: wallet.walletNumber,
+      currency: wallet.currency,
+      displayName,
+      maskedEmail,
+      maskedPhone,
+      fingerprint,
+    };
+  }
+
   async p2pTransfer(
     senderUserId: string,
     dto: {
@@ -488,6 +521,7 @@ export class WalletService {
       description?: string;
       idempotencyKey?: string;
       pin: string;
+      recipientFingerprint?: string;
     },
   ) {
  
@@ -525,6 +559,14 @@ export class WalletService {
     });
     if (!senderWallet) throw new NotFoundException('Sender primary wallet not found or inactive');
 
+    // 3b. Optional recipient confirmation: if caller provided recipientFingerprint, verify it matches the lookup
+    if (dto.recipientFingerprint) {
+      const lookup = await this.lookupRecipient(senderUserId, dto.receiverWalletNumber);
+      if (!lookup || lookup.fingerprint !== dto.recipientFingerprint) {
+        throw new BadRequestException('Recipient confirmation failed. Fingerprint mismatch.');
+      }
+    }
+
     if (senderWallet.isLocked) throw new ForbiddenException('Wallet is locked');
 
     const amount = new Prisma.Decimal(dto.amount);
@@ -545,6 +587,8 @@ export class WalletService {
     if (receiverWallet.id === senderWallet.id) {
       throw new BadRequestException('Cannot transfer to your own wallet');
     }
+
+    // 4b. Prevent mistakes: return receiver preview (name/email masked) as extra confirmation field in response when requested via lookup endpoint
 
     // 5. Check limits (simple daily for MVP - can be enhanced with aggregates)
     if (senderWallet.dailyLimit && amount.gt(senderWallet.dailyLimit)) {

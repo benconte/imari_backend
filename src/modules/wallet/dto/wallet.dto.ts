@@ -32,6 +32,7 @@ export const P2PTransferSchema = z.object({
   description: z.string().max(200).optional(),
   idempotencyKey: z.string().uuid().optional(),
   pin: z.string().length(4).regex(/^\d{4}$/),
+  recipientFingerprint: z.string().regex(/^[a-f0-9]{64}$/, 'Recipient fingerprint must be a SHA-256 hex string').optional(),
 });
 
 export type P2PTransferDto = z.infer<typeof P2PTransferSchema>;
@@ -122,6 +123,12 @@ export class P2PTransferDtoSwagger {
     description: 'Optional idempotency key (UUID) for safe retries',
   })
   idempotencyKey?: string;
+
+  @ApiPropertyOptional({
+    example: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    description: 'Optional recipient fingerprint (SHA-256 hex) previously returned by recipient lookup',
+  })
+  recipientFingerprint?: string;
 }
 
 export const CreateWalletSchema = z.object({
