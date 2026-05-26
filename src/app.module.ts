@@ -14,6 +14,7 @@ import { IdentityModule } from '@modules/identity/identity.module';
 import { MfaModule } from '@modules/mfa/mfa.module';
 import { WalletModule } from '@modules/wallet/wallet.module';
 import { DocsModule } from '@modules/docs/docs.module';
+import { AdminModule } from '@modules/admin/admin.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -51,6 +52,7 @@ import { AppController } from './app.controller';
     IdentityModule,
     WalletModule,
     DocsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
