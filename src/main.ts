@@ -10,6 +10,7 @@ import { AllExceptionsFilter } from '@common/filters/all-exceptions.filter';
 import { PrismaExceptionFilter } from '@common/filters/prisma-exception.filter';
 import { TransformInterceptor } from '@common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from '@common/interceptors/logging.interceptor';
+import { DocsService } from '@modules/docs/docs.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -22,7 +23,17 @@ async function bootstrap() {
   const nodeEnv = config.get<string>('app.nodeEnv', 'development');
 
   // Security middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
+          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        },
+      },
+    }),
+  );
   app.use(compression());
   app.use(cookieParser());
   app.enableCors({
@@ -54,7 +65,7 @@ async function bootstrap() {
     new TransformInterceptor(),
   );
 
-  // Swagger (disabled in production)
+  // Swagger & ReDoc (disabled in production)
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Imari API')
@@ -63,7 +74,13 @@ async function bootstrap() {
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
+    
+    // Swagger UI at /api/v1/docs
     SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
+    
+    // Store spec in DocsService for ReDoc and external tools to access
+    const docsService = app.get(DocsService);
+    docsService.setOpenApiSpec(document);
   }
 
   app.enableShutdownHooks();
@@ -73,7 +90,8 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   logger.log(`🚀 Imari API running at http://localhost:${port}/${apiPrefix}`);
   if (nodeEnv !== 'production') {
-    logger.log(`📘 Swagger UI    at http://localhost:${port}/${apiPrefix}/docs`);
+    logger.log(`📘 Swagger UI at http://localhost:${port}/${apiPrefix}/docs`);
+    logger.log(`📕 ReDoc at    http://localhost:${port}/redoc`);
   }
 }
 
