@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PrismaClient, Currency, TransactionType, TransactionStatus, TransactionDirection, LedgerEntryType, WalletStatus, AuditAction } from '@prisma/client';
+import { randomUUID, createHash } from 'crypto';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { hashSecret, verifySecret } from '@common/utils/hash.util';
 import { generateTransactionRef, generateWalletNumber } from '@common/utils/reference.util';
@@ -222,11 +223,40 @@ export class WalletService {
 
     if (wallet.currency !== dto.currency) throw new BadRequestException('Currency mismatch');
 
+    // Generate server-side idempotency key if not provided
+    const idempotencyKey = dto.idempotencyKey ?? randomUUID();
+
+    // Compute request hash (canonicalize important fields)
+    const hash = createHash('sha256')
+      .update(JSON.stringify({ userId, walletId, amount: amount.toString(), currency: dto.currency }))
+      .digest('hex');
+
+    // Check existing idempotency record for this key
+    const existingKey = await this.prisma.idempotencyKey.findUnique({ where: { key: idempotencyKey } });
+    if (existingKey) {
+      // If same user and same requestHash, return stored response if present
+      if (existingKey.userId === userId && existingKey.requestHash === hash && existingKey.responseBody) {
+        return existingKey.responseBody;
+      }
+      throw new ConflictException('Idempotency key already used with different request');
+    }
+
     const result = await this.prisma.runInTransaction(async (tx) => {
+      // Create idempotency record upfront (reserve key)
+      await tx.idempotencyKey.create({
+        data: {
+          key: idempotencyKey,
+          userId,
+          endpoint: 'POST /wallet/:id/deposit',
+          requestHash: hash,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+
       const transaction = await tx.transaction.create({
         data: {
           reference: generateTransactionRef(),
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey,
           receiverId: userId,
           receiverWalletId: wallet.id,
           type: TransactionType.DEPOSIT,
@@ -268,7 +298,13 @@ export class WalletService {
         ],
       });
 
-      return { transactionId: transaction.id, reference: transaction.reference };
+      // Return response object that includes the generated idempotency key
+      const response = { transactionId: transaction.id, reference: transaction.reference, idempotencyKey };
+
+      // Store response in idempotency record
+      await tx.idempotencyKey.update({ where: { key: idempotencyKey }, data: { responseStatus: 202, responseBody: response } });
+
+      return response;
     });
 
     await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'DEPOSIT', amount: dto.amount } } });
@@ -296,11 +332,36 @@ export class WalletService {
     // Check available balance
     if (wallet.availableBalance.lt(amount)) throw new BadRequestException('Insufficient available balance');
 
+    // Generate server-side idempotency key if not provided
+    const idempotencyKey = dto.idempotencyKey ?? randomUUID();
+
+    const hash = createHash('sha256')
+      .update(JSON.stringify({ userId, walletId, amount: amount.toString(), currency: dto.currency }))
+      .digest('hex');
+
+    const existingKey = await this.prisma.idempotencyKey.findUnique({ where: { key: idempotencyKey } });
+    if (existingKey) {
+      if (existingKey.userId === userId && existingKey.requestHash === hash && existingKey.responseBody) {
+        return existingKey.responseBody;
+      }
+      throw new ConflictException('Idempotency key already used with different request');
+    }
+
     const result = await this.prisma.runInTransaction(async (tx) => {
+      await tx.idempotencyKey.create({
+        data: {
+          key: idempotencyKey,
+          userId,
+          endpoint: 'POST /wallet/:id/withdraw',
+          requestHash: hash,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+
       const transaction = await tx.transaction.create({
         data: {
           reference: generateTransactionRef(),
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey,
           senderId: userId,
           senderWalletId: wallet.id,
           type: TransactionType.WITHDRAWAL,
@@ -346,7 +407,10 @@ export class WalletService {
       // Update wallet availableBalance to reflect hold
       await tx.wallet.update({ where: { id: wallet.id }, data: { availableBalance: wallet.availableBalance.sub(amount) } });
 
-      return { transactionId: transaction.id, reference: transaction.reference };
+      const response = { transactionId: transaction.id, reference: transaction.reference, idempotencyKey };
+      await tx.idempotencyKey.update({ where: { key: idempotencyKey }, data: { responseStatus: 202, responseBody: response } });
+
+      return response;
     });
 
     await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'WITHDRAWAL', amount: dto.amount } } });
@@ -415,6 +479,39 @@ export class WalletService {
     return { message: 'Wallet PIN changed successfully' };
   }
 
+  async lookupRecipient(requestingUserId: string, walletNumber: string) {
+    const wallet = await this.prisma.wallet.findUnique({ where: { walletNumber }, include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } } });
+    if (!wallet) throw new NotFoundException('Recipient not found');
+    if (wallet.status !== WalletStatus.ACTIVE || wallet.isLocked) throw new BadRequestException('Recipient wallet is not active');
+
+    const u = (wallet as any).user;
+    const displayName = u ? `${u.firstName} ${u.lastName}` : null;
+    const maskEmail = (e: string | null) => {
+      if (!e) return null;
+      const parts = e.split('@');
+      if (parts[0].length <= 2) return parts[0][0] + '***@' + parts[1];
+      return parts[0][0] + '***' + parts[0].slice(-1) + '@' + parts[1];
+    };
+    const maskPhone = (p: string | null) => {
+      if (!p) return null;
+      return p.replace(/.(?=.{4})/g, '*');
+    };
+
+    const maskedEmail = maskEmail(u?.email ?? null);
+    const maskedPhone = maskPhone(u?.phone ?? null);
+    const fingerprint = createHash('sha256').update(`${wallet.id}:${u?.id ?? ''}:${wallet.walletNumber}`).digest('hex');
+
+    return {
+      walletId: wallet.id,
+      walletNumber: wallet.walletNumber,
+      currency: wallet.currency,
+      displayName,
+      maskedEmail,
+      maskedPhone,
+      fingerprint,
+    };
+  }
+
   async p2pTransfer(
     senderUserId: string,
     dto: {
@@ -424,6 +521,7 @@ export class WalletService {
       description?: string;
       idempotencyKey?: string;
       pin: string;
+      recipientFingerprint?: string;
     },
   ) {
  
@@ -461,6 +559,14 @@ export class WalletService {
     });
     if (!senderWallet) throw new NotFoundException('Sender primary wallet not found or inactive');
 
+    // 3b. Optional recipient confirmation: if caller provided recipientFingerprint, verify it matches the lookup
+    if (dto.recipientFingerprint) {
+      const lookup = await this.lookupRecipient(senderUserId, dto.receiverWalletNumber);
+      if (!lookup || lookup.fingerprint !== dto.recipientFingerprint) {
+        throw new BadRequestException('Recipient confirmation failed. Fingerprint mismatch.');
+      }
+    }
+
     if (senderWallet.isLocked) throw new ForbiddenException('Wallet is locked');
 
     const amount = new Prisma.Decimal(dto.amount);
@@ -481,6 +587,8 @@ export class WalletService {
     if (receiverWallet.id === senderWallet.id) {
       throw new BadRequestException('Cannot transfer to your own wallet');
     }
+
+    // 4b. Prevent mistakes: return receiver preview (name/email masked) as extra confirmation field in response when requested via lookup endpoint
 
     // 5. Check limits (simple daily for MVP - can be enhanced with aggregates)
     if (senderWallet.dailyLimit && amount.gt(senderWallet.dailyLimit)) {
