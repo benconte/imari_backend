@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, PrismaClient, Currency, TransactionType, TransactionStatus, TransactionDirection, LedgerEntryType, WalletStatus, AuditAction } from '@prisma/client';
+import { randomUUID, createHash } from 'crypto';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { hashSecret, verifySecret } from '@common/utils/hash.util';
 import { generateTransactionRef, generateWalletNumber } from '@common/utils/reference.util';
@@ -222,11 +223,40 @@ export class WalletService {
 
     if (wallet.currency !== dto.currency) throw new BadRequestException('Currency mismatch');
 
+    // Generate server-side idempotency key if not provided
+    const idempotencyKey = dto.idempotencyKey ?? randomUUID();
+
+    // Compute request hash (canonicalize important fields)
+    const hash = createHash('sha256')
+      .update(JSON.stringify({ userId, walletId, amount: amount.toString(), currency: dto.currency }))
+      .digest('hex');
+
+    // Check existing idempotency record for this key
+    const existingKey = await this.prisma.idempotencyKey.findUnique({ where: { key: idempotencyKey } });
+    if (existingKey) {
+      // If same user and same requestHash, return stored response if present
+      if (existingKey.userId === userId && existingKey.requestHash === hash && existingKey.responseBody) {
+        return existingKey.responseBody;
+      }
+      throw new ConflictException('Idempotency key already used with different request');
+    }
+
     const result = await this.prisma.runInTransaction(async (tx) => {
+      // Create idempotency record upfront (reserve key)
+      await tx.idempotencyKey.create({
+        data: {
+          key: idempotencyKey,
+          userId,
+          endpoint: 'POST /wallet/:id/deposit',
+          requestHash: hash,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+
       const transaction = await tx.transaction.create({
         data: {
           reference: generateTransactionRef(),
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey,
           receiverId: userId,
           receiverWalletId: wallet.id,
           type: TransactionType.DEPOSIT,
@@ -268,7 +298,13 @@ export class WalletService {
         ],
       });
 
-      return { transactionId: transaction.id, reference: transaction.reference };
+      // Return response object that includes the generated idempotency key
+      const response = { transactionId: transaction.id, reference: transaction.reference, idempotencyKey };
+
+      // Store response in idempotency record
+      await tx.idempotencyKey.update({ where: { key: idempotencyKey }, data: { responseStatus: 202, responseBody: response } });
+
+      return response;
     });
 
     await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'DEPOSIT', amount: dto.amount } } });
@@ -296,11 +332,36 @@ export class WalletService {
     // Check available balance
     if (wallet.availableBalance.lt(amount)) throw new BadRequestException('Insufficient available balance');
 
+    // Generate server-side idempotency key if not provided
+    const idempotencyKey = dto.idempotencyKey ?? randomUUID();
+
+    const hash = createHash('sha256')
+      .update(JSON.stringify({ userId, walletId, amount: amount.toString(), currency: dto.currency }))
+      .digest('hex');
+
+    const existingKey = await this.prisma.idempotencyKey.findUnique({ where: { key: idempotencyKey } });
+    if (existingKey) {
+      if (existingKey.userId === userId && existingKey.requestHash === hash && existingKey.responseBody) {
+        return existingKey.responseBody;
+      }
+      throw new ConflictException('Idempotency key already used with different request');
+    }
+
     const result = await this.prisma.runInTransaction(async (tx) => {
+      await tx.idempotencyKey.create({
+        data: {
+          key: idempotencyKey,
+          userId,
+          endpoint: 'POST /wallet/:id/withdraw',
+          requestHash: hash,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+
       const transaction = await tx.transaction.create({
         data: {
           reference: generateTransactionRef(),
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey,
           senderId: userId,
           senderWalletId: wallet.id,
           type: TransactionType.WITHDRAWAL,
@@ -346,7 +407,10 @@ export class WalletService {
       // Update wallet availableBalance to reflect hold
       await tx.wallet.update({ where: { id: wallet.id }, data: { availableBalance: wallet.availableBalance.sub(amount) } });
 
-      return { transactionId: transaction.id, reference: transaction.reference };
+      const response = { transactionId: transaction.id, reference: transaction.reference, idempotencyKey };
+      await tx.idempotencyKey.update({ where: { key: idempotencyKey }, data: { responseStatus: 202, responseBody: response } });
+
+      return response;
     });
 
     await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${result.transactionId}`, metadata: { type: 'WITHDRAWAL', amount: dto.amount } } });
