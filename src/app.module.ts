@@ -13,6 +13,8 @@ import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 import { IdentityModule } from '@modules/identity/identity.module';
 import { MfaModule } from '@modules/mfa/mfa.module';
 import { WalletModule } from '@modules/wallet/wallet.module';
+import { SavingsModule } from '@modules/savings/savings.module';
+import { BeneficiaryModule } from '@modules/beneficiary/beneficiary.module';
 import { DocsModule } from '@modules/docs/docs.module';
 import { AdminModule } from '@modules/admin/admin.module';
 import { AppController } from './app.controller';
@@ -51,6 +53,8 @@ import { AppController } from './app.controller';
     MfaModule,
     IdentityModule,
     WalletModule,
+    SavingsModule,
+    BeneficiaryModule,
     DocsModule,
     AdminModule,
   ],

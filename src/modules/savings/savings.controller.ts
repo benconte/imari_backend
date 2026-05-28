@@ -80,7 +80,7 @@ export class SavingsController {
     return this.svc.withdrawFromVault(user.userId, id, dto);
   }
 
-  // Rules
+  
   @Post('rules')
   @ApiBody({ type: CreateRuleDtoSwagger })
   async createRule(@CurrentUser() user: AuthUser, @Body(new ZodValidationPipe(CreateRuleSchema)) dto: CreateRuleDto) {
