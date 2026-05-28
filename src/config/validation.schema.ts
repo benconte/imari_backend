@@ -16,6 +16,9 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 chars'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
 
+  JWT_ADMIN_SECRET: z.string().min(32, 'JWT_ADMIN_SECRET must be at least 32 chars'),
+  JWT_ADMIN_REFRESH_SECRET: z.string().min(32, 'JWT_ADMIN_REFRESH_SECRET must be at least 32 chars'),
+
   ENCRYPTION_KEY: z
     .string()
     .length(64, 'ENCRYPTION_KEY must be 64 hex chars (32 bytes)')

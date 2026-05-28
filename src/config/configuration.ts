@@ -18,6 +18,12 @@ export const configuration = () => ({
     refreshSecret: process.env.JWT_REFRESH_SECRET,
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
   },
+  jwtAdmin: {
+    accessSecret: process.env.JWT_ADMIN_SECRET,
+    accessExpiresIn: '15m',
+    refreshSecret: process.env.JWT_ADMIN_REFRESH_SECRET,
+    refreshExpiresIn: '12h',
+  },
   encryption: {
     key: process.env.ENCRYPTION_KEY,
   },
