@@ -15,6 +15,7 @@ import { MfaModule } from '@modules/mfa/mfa.module';
 import { WalletModule } from '@modules/wallet/wallet.module';
 import { SavingsModule } from '@modules/savings/savings.module';
 import { BeneficiaryModule } from '@modules/beneficiary/beneficiary.module';
+import { VirtualCardModule } from '@modules/virtual-card/virtual-card.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -53,6 +54,7 @@ import { AppController } from './app.controller';
     WalletModule,
     SavingsModule,
     BeneficiaryModule,
+    VirtualCardModule,
   ],
   controllers: [AppController],
   providers: [
