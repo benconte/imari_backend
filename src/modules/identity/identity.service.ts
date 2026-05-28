@@ -39,7 +39,17 @@ export class IdentityService {
     });
 
     if (!user) throw new NotFoundException('User not found');
-    return user;
+
+    // Check if wallet pin exists
+    const pinExists = await this.prisma.walletPin.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    return {
+      ...user,
+      isPinSet: !!pinExists,
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {

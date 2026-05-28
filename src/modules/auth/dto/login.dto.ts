@@ -17,7 +17,8 @@ export const DeviceSchema = z
 export const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  totpCode: z.string().length(6).optional(),
+  // 6-digit TOTP code OR 10-char backup code (randomToken(5) = 10 hex chars)
+  totpCode: z.string().min(6).max(10).optional(),
   device: DeviceSchema,
 });
 
@@ -93,7 +94,7 @@ export class LoginDtoSwagger {
 
   @ApiPropertyOptional({
     example: '123456',
-    description: 'TOTP code (6 digits) - required if MFA is enabled on account',
+    description: 'MFA code — either a 6-digit TOTP code from your authenticator app, or a 10-character backup code. Required when MFA is enabled on the account.',
   })
   totpCode?: string;
 

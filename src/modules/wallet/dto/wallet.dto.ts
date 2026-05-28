@@ -62,7 +62,7 @@ export class SetPinDtoSwagger {
     minLength: 4,
     maxLength: 4,
   })
-  pin: string;
+  pin!: string;
 }
 
 export class ChangePinDtoSwagger {
@@ -72,7 +72,7 @@ export class ChangePinDtoSwagger {
     minLength: 4,
     maxLength: 4,
   })
-  oldPin: string;
+  oldPin!: string;
 
   @ApiProperty({
     example: '5678',
@@ -80,7 +80,7 @@ export class ChangePinDtoSwagger {
     minLength: 4,
     maxLength: 4,
   })
-  newPin: string;
+  newPin!: string;
 }
 
 export class P2PTransferDtoSwagger {
@@ -88,20 +88,20 @@ export class P2PTransferDtoSwagger {
     example: 'IMR-7465291357',
     description: 'Receiver wallet number (starts with IMR- followed by 10 digits)',
   })
-  receiverWalletNumber: string;
+  receiverWalletNumber!: string;
 
   @ApiProperty({
     example: '5000',
     description: 'Amount to send (string, supports up to 4 decimal places)',
   })
-  amount: string;
+  amount!: string;
 
   @ApiProperty({
     example: 'RWF',
     enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'],
     description: 'Currency of the transfer',
   })
-  currency: Currency;
+  currency!: Currency;
 
   @ApiPropertyOptional({
     example: 'Monthly support',
@@ -116,7 +116,7 @@ export class P2PTransferDtoSwagger {
     minLength: 4,
     maxLength: 4,
   })
-  pin: string;
+  pin!: string;
 
   @ApiPropertyOptional({
     example: '550e8400-e29b-41d4-a716-446655440000',
@@ -145,7 +145,7 @@ export class CreateWalletDtoSwagger {
     enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'],
     description: 'Currency for the new wallet. You can have only one wallet per currency.',
   })
-  currency: Currency;
+  currency!: Currency;
 }
 
 export const SetPrimaryWalletSchema = z.object({
@@ -159,8 +159,9 @@ export class SetPrimaryWalletDtoSwagger {
     example: '07c03b10-cde1-41d5-a2be-8ab8978b51eb',
     description: 'UUID of the wallet you want to set as your primary wallet',
   })
-  walletId: string;
+  walletId!: string;
 }
+
 
 /* ------------------ Deposit & Withdraw DTOs ------------------ */
 
@@ -177,15 +178,15 @@ export type DepositDto = z.infer<typeof DepositSchema>;
 
 export class DepositDtoSwagger {
   @ApiProperty({ example: '10000', description: 'Amount to deposit (string, up to 4 decimals)' })
-  amount: string;
+  amount!: string;
 
   @ApiProperty({ example: 'RWF', enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'] })
-  currency: Currency;
+  currency!: Currency;
 
   @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Optional idempotency UUID' })
   idempotencyKey?: string;
 
-  @ApiPropertyOptional({ example: 'FLW-1234-REF', description: 'Provider reference (optional)' })
+  @ApiPropertyOptional({ example: 'FLW-1234-REF', description: 'Optional provider reference' })
   providerReference?: string;
 }
 
@@ -203,17 +204,33 @@ export type WithdrawDto = z.infer<typeof WithdrawSchema>;
 
 export class WithdrawDtoSwagger {
   @ApiProperty({ example: '5000', description: 'Amount to withdraw (string)' })
-  amount: string;
+  amount!: string;
 
   @ApiProperty({ example: 'RWF', enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'] })
-  currency: Currency;
+  currency!: Currency;
 
   @ApiProperty({ example: '1234', description: 'Your 4-digit wallet PIN', minLength: 4, maxLength: 4 })
-  pin: string;
+  pin!: string;
 
   @ApiPropertyOptional({ example: 'Payout to bank', description: 'Optional description for the withdrawal' })
   description?: string;
 
   @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Optional idempotency UUID' })
   idempotencyKey?: string;
+}
+
+export const VerifyPinSchema = z.object({
+  pin: z.string().length(4).regex(/^\d{4}$/),
+});
+
+export type VerifyPinDto = z.infer<typeof VerifyPinSchema>;
+
+export class VerifyPinDtoSwagger {
+  @ApiProperty({
+    example: '1234',
+    description: 'Your 4-digit wallet PIN',
+    minLength: 4,
+    maxLength: 4,
+  })
+  pin!: string;
 }

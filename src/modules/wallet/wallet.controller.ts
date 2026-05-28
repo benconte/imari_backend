@@ -108,6 +108,27 @@ export class WalletController {
   async getMyWallets(@CurrentUser() user: AuthUser) {
     return this.walletService.getUserWallets(user.userId);
   }
+
+  @Post('pin/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify wallet PIN' })
+  @ApiBody({
+    type: SetPinDtoSwagger,
+    examples: {
+      valid: {
+        summary: 'Verify PIN',
+        value: { pin: '1234' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'PIN is valid' })
+  @ApiResponse({ status: 401, description: 'Invalid PIN' })
+  async verifyPin(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SetPinSchema)) dto: SetPinDto,
+  ) {
+    return this.walletService.verifyPin(user.userId, dto.pin);
+  }
   
   @Post('pin')
   @HttpCode(HttpStatus.CREATED)
