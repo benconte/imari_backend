@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -18,6 +19,8 @@ import { decrypt } from '@common/utils/crypto.util';
 import { hashSecret, randomToken, sha256, verifySecret } from '@common/utils/hash.util';
 import { generateOtpCode, generateReference } from '@common/utils/reference.util';
 import { EmailService } from '../../integrations/email/email.service';
+
+const TOTP_WINDOW = 1; // Allow ±1 time step (30s each direction)
 import { WalletService } from '@modules/wallet/wallet.service';
 import { DeviceDto, LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -44,6 +47,10 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly walletService: WalletService,
   ) {}
+
+  private verifyTotpWithWindow(code: string, secret: string): boolean {
+    return authenticator.create({ window: TOTP_WINDOW }).verify({ token: code, secret });
+  }
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
     const conflict = await this.prisma.user.findFirst({
@@ -437,7 +444,8 @@ export class AuthService {
 
     const secret = decrypt(mfaRecord.secret);
 
-    if (authenticator.verify({ token: code, secret })) {
+    // Verify TOTP code with time window support (allows clock drift ±60 seconds)
+    if (this.verifyTotpWithWindow(code, secret)) {
       await this.prisma.mfaSecret.update({
         where: { id: mfaRecord.id },
         data: { lastUsedAt: new Date() },
@@ -445,6 +453,7 @@ export class AuthService {
       return;
     }
 
+    // Try backup code if TOTP failed
     const codeHash = sha256(code);
     const backup = mfaRecord.backupCodes.find((bc) => bc.codeHash === codeHash);
     if (backup) {
