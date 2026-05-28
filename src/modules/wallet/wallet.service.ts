@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma, PrismaClient, Currency, TransactionType, TransactionStatus, TransactionDirection, LedgerEntryType, WalletStatus, AuditAction } from '@prisma/client';
 import { randomUUID, createHash } from 'crypto';
@@ -538,20 +539,7 @@ export class WalletService {
     }
 
     // 2. Validate sender has PIN and verify it
-    const pinRecord = await this.prisma.walletPin.findUnique({ where: { userId: senderUserId } });
-    if (!pinRecord) {
-      throw new ForbiddenException('Wallet PIN not set. Please set your PIN first.');
-    }
-
-    if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
-      throw new ForbiddenException('PIN locked due to failed attempts');
-    }
-
-    const pinValid = await verifySecret(pinRecord.pinHash, dto.pin);
-    if (!pinValid) {
-      await this.handleFailedPinAttempt(senderUserId, pinRecord);
-      throw new ForbiddenException('Invalid wallet PIN');
-    }
+    await this.verifyUserPin(senderUserId, dto.pin);
 
     // 3. Find sender primary wallet
     const senderWallet = await this.prisma.wallet.findFirst({
@@ -691,7 +679,7 @@ export class WalletService {
       return {
         transactionId: transaction.id,
         reference: transaction.reference,
-        amount: amount.toString(),
+        amount: toDecimalString(amount),
         currency: dto.currency,
         senderWalletNumber: senderWallet.walletNumber,
         receiverWalletNumber: receiverWallet.walletNumber,
@@ -751,6 +739,23 @@ export class WalletService {
     }
   }
 
+  private async verifyUserPin(userId: string, pin: string): Promise<void> {
+    const pinRecord = await this.prisma.walletPin.findUnique({ where: { userId } });
+    if (!pinRecord) {
+      throw new ForbiddenException('Wallet PIN not set. Please set your PIN first.');
+    }
+
+    if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
+      throw new ForbiddenException('PIN locked due to failed attempts');
+    }
+
+    const pinValid = await verifySecret(pinRecord.pinHash, pin);
+    if (!pinValid) {
+      await this.handleFailedPinAttempt(userId, pinRecord);
+      throw new UnauthorizedException('Invalid PIN');
+    }
+  }
+
   /**
    * Get paginated transaction history for user's wallets.
    */
@@ -797,7 +802,7 @@ export class WalletService {
         await tx.transaction.update({ where: { id: txRecord.id }, data: { status: TransactionStatus.COMPLETED, processedAt: new Date() } });
       });
 
-      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'DEPOSIT', amount: txRecord.amount.toString() } } });
+      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'DEPOSIT', amount: toDecimalString(txRecord.amount) } } });
 
       return { message: 'Deposit completed', transactionId: txRecord.id };
     }
@@ -824,7 +829,7 @@ export class WalletService {
         await tx.transaction.update({ where: { id: txRecord.id }, data: { status: TransactionStatus.COMPLETED, processedAt: new Date() } });
       });
 
-      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'WITHDRAWAL', amount: txRecord.amount.toString() } } });
+      await this.prisma.auditLog.create({ data: { userId, action: AuditAction.PROFILE_UPDATE, resource: `transaction:${txRecord.id}`, metadata: { type: 'WITHDRAWAL', amount: toDecimalString(txRecord.amount) } } });
 
       return { message: 'Withdrawal completed', transactionId: txRecord.id };
     }
@@ -871,6 +876,17 @@ export class WalletService {
       },
     });
 
-    return transactions;
+    // Format amounts to prevent ugly Prisma Decimal objects in response
+    return transactions.map((tx) => ({
+      ...tx,
+      amount: toDecimalString(tx.amount),
+      fee: toDecimalString(tx.fee),
+      netAmount: toDecimalString(tx.netAmount),
+    }));
+  }
+
+  async verifyPin(userId: string, pin: string): Promise<{ valid: boolean }> {
+    await this.verifyUserPin(userId, pin);
+    return { valid: true };
   }
 }
