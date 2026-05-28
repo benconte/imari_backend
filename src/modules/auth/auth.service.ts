@@ -153,6 +153,12 @@ export class AuthService {
       await this.verifyMfaCode(user.id, dto.totpCode);
     }
 
+    // Check if wallet pin exists
+    const pinExists = await this.prisma.walletPin.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+
     const device = await this.upsertDevice(user.id, dto.device, meta.userAgent);
     const { accessToken, refreshToken } = await this.createSession(user.id, device.id, meta);
 
@@ -183,6 +189,7 @@ export class AuthService {
         preferredCurrency: user.preferredCurrency,
         profilePhotoUrl: user.profilePhotoUrl,
         isMfaEnabled: user.isMfaEnabled,
+        isPinSet: !!pinExists,
       },
     };
   }
