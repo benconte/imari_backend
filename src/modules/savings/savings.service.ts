@@ -1,12 +1,38 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '@common/prisma/prisma.service';
-import { Prisma, TransactionType, TransactionDirection, TransactionStatus, LedgerEntryType } from '@prisma/client';
+import { Prisma, TransactionType, TransactionDirection, TransactionStatus, LedgerEntryType, SavingsContributionSource } from '@prisma/client';
 import { randomUUID, createHash } from 'crypto';
+import { toDecimalString } from '@common/utils/money.util';
 
 @Injectable()
 export class SavingsService {
   private readonly logger = new Logger(SavingsService.name);
   constructor(private readonly prisma: PrismaService) {}
+
+  private formatVault(vault: any) {
+    if (!vault) return vault;
+    return {
+      ...vault,
+      targetAmount: toDecimalString(vault.targetAmount),
+      currentAmount: toDecimalString(vault.currentAmount),
+    };
+  }
+
+  private formatContribution(contribution: any) {
+    if (!contribution) return contribution;
+    return {
+      ...contribution,
+      amount: toDecimalString(contribution.amount),
+    };
+  }
+
+  private formatRule(rule: any) {
+    if (!rule) return rule;
+    return {
+      ...rule,
+      amount: rule.amount ? toDecimalString(rule.amount) : null,
+    };
+  }
 
   async createVault(userId: string, dto: any) {
     // validate wallet belongs to user
@@ -24,48 +50,65 @@ export class SavingsService {
         currency: dto.currency,
         status: 'ACTIVE',
         isLocked: false,
+        lockUntil: dto.lockUntil ? new Date(dto.lockUntil) : null,
         targetDate: dto.targetDate ? new Date(dto.targetDate) : null,
         iconEmoji: dto.iconEmoji,
       },
     });
 
-    return vault;
+    return this.formatVault(vault);
+  }
+
+  async getVaults(userId: string) {
+    const vaults = await this.prisma.savingsVault.findMany({ where: { userId } });
+    return vaults.map(v => this.formatVault(v));
   }
 
   async getUserVaults(userId: string) {
-    return this.prisma.savingsVault.findMany({ where: { userId } });
+    return this.getVaults(userId);
   }
 
   async getVault(userId: string, id: string) {
-    const v = await this.prisma.savingsVault.findUnique({ where: { id } });
-    if (!v || v.userId !== userId) throw new NotFoundException('Vault not found');
-    return v;
+    const vault = await this.prisma.savingsVault.findUnique({ where: { id } });
+    if (!vault || vault.userId !== userId) throw new NotFoundException('Vault not found');
+    return this.formatVault(vault);
   }
 
   async updateVault(userId: string, id: string, dto: any) {
-    const v = await this.getVault(userId, id);
-    return this.prisma.savingsVault.update({ where: { id }, data: dto });
+    await this.getVault(userId, id);
+    const updateData: any = { ...dto };
+    if (dto.targetAmount) updateData.targetAmount = new Prisma.Decimal(dto.targetAmount);
+    if (dto.targetDate) updateData.targetDate = new Date(dto.targetDate);
+    if (dto.lockUntil) updateData.lockUntil = new Date(dto.lockUntil);
+
+    const updated = await this.prisma.savingsVault.update({ where: { id }, data: updateData });
+    return this.formatVault(updated);
   }
 
   async deleteVault(userId: string, id: string) {
-    const v = await this.getVault(userId, id);
-    return this.prisma.savingsVault.delete({ where: { id } });
+    const vault = await this.getVault(userId, id);
+    if (vault.currentAmount.gt(0)) throw new BadRequestException('Cannot delete vault with active balance. Withdraw first.');
+    const deleted = await this.prisma.savingsVault.delete({ where: { id } });
+    return this.formatVault(deleted);
   }
 
-  async lockVault(userId: string, id: string) {
-    const v = await this.getVault(userId, id);
-    return this.prisma.savingsVault.update({ where: { id }, data: { isLocked: true } });
+  async lockVault(userId: string, id: string, lockUntil?: Date) {
+    await this.getVault(userId, id);
+    const updated = await this.prisma.savingsVault.update({ where: { id }, data: { isLocked: true, lockUntil: lockUntil ?? null } });
+    return this.formatVault(updated);
   }
 
   async unlockVault(userId: string, id: string) {
     const v = await this.getVault(userId, id);
-    return this.prisma.savingsVault.update({ where: { id }, data: { isLocked: false } });
+    const updated = await this.prisma.savingsVault.update({ where: { id }, data: { isLocked: false } });
+    return this.formatVault(updated);
   }
 
   // Deposit to vault: deduct from wallet and credit vault atomically
-  async depositToVault(userId: string, vaultId: string, dto: any) {
-    const vault = await this.getVault(userId, vaultId);
-    if (vault.currency !== dto.currency) throw new BadRequestException('Currency mismatch');
+  async depositToVault(userId: string, vaultId: string, dto: any, source: SavingsContributionSource = SavingsContributionSource.MANUAL) {
+    const vault = await this.prisma.savingsVault.findUnique({ where: { id: vaultId } });
+    if (!vault || vault.userId !== userId) throw new NotFoundException('Vault not found');
+    const currency = vault.currency;
 
     const wallet = await this.prisma.wallet.findUnique({ where: { id: vault.walletId } });
     if (!wallet) throw new NotFoundException('Wallet not found');
@@ -94,7 +137,7 @@ export class SavingsService {
           type: TransactionType.VAULT_CONTRIBUTION,
           direction: TransactionDirection.DEBIT,
           amount: new Prisma.Decimal(dto.amount),
-          currency: dto.currency,
+          currency: currency,
           fee: new Prisma.Decimal(0),
           netAmount: new Prisma.Decimal(dto.amount),
           status: TransactionStatus.COMPLETED,
@@ -105,9 +148,22 @@ export class SavingsService {
 
       // ledger entries: debit user wallet, credit vault (USER_VAULT)
       await tx.ledgerEntry.createMany({ data: [
-        { transactionId: transaction.id, entryType: LedgerEntryType.USER_WALLET, walletId: wallet.id, accountKey: `user:wallet:${wallet.id}`, direction: TransactionDirection.DEBIT, amount: new Prisma.Decimal(dto.amount), currency: dto.currency, balanceBefore: wallet.balance, balanceAfter: wallet.balance.sub(new Prisma.Decimal(dto.amount)), description: `Vault deposit: ${vault.name}` },
-        { transactionId: transaction.id, entryType: LedgerEntryType.USER_VAULT, walletId: wallet.id, accountKey: `user:vault:${vault.id}`, direction: TransactionDirection.CREDIT, amount: new Prisma.Decimal(dto.amount), currency: dto.currency, balanceBefore: vault.currentAmount, balanceAfter: vault.currentAmount.add(new Prisma.Decimal(dto.amount)), description: `Vault deposit into ${vault.name}` },
+        { transactionId: transaction.id, entryType: LedgerEntryType.USER_WALLET, walletId: wallet.id, accountKey: `user:wallet:${wallet.id}`, direction: TransactionDirection.DEBIT, amount: new Prisma.Decimal(dto.amount), currency: currency, balanceBefore: wallet.balance, balanceAfter: wallet.balance.sub(new Prisma.Decimal(dto.amount)), description: `Vault deposit: ${vault.name}` },
+        { transactionId: transaction.id, entryType: LedgerEntryType.USER_VAULT, walletId: wallet.id, accountKey: `user:vault:${vault.id}`, direction: TransactionDirection.CREDIT, amount: new Prisma.Decimal(dto.amount), currency: currency, balanceBefore: vault.currentAmount, balanceAfter: vault.currentAmount.add(new Prisma.Decimal(dto.amount)), description: `Vault deposit into ${vault.name}` },
       ]});
+
+      // create savings contribution record
+      await tx.savingsContribution.create({
+        data: {
+          vaultId: vault.id,
+          walletId: wallet.id,
+          transactionId: transaction.id,
+          amount: new Prisma.Decimal(dto.amount),
+          currency: currency,
+          source: source,
+          note: dto.note ?? `Vault deposit: ${vault.name}`,
+        }
+      });
 
       // update wallet balances and vault currentAmount
       await tx.wallet.update({ where: { id: wallet.id }, data: { balance: wallet.balance.sub(new Prisma.Decimal(dto.amount)), availableBalance: wallet.availableBalance.sub(new Prisma.Decimal(dto.amount)) } });
@@ -125,7 +181,8 @@ export class SavingsService {
 
   // Withdraw from vault
   async withdrawFromVault(userId: string, vaultId: string, dto: any) {
-    const vault = await this.getVault(userId, vaultId);
+    const vault = await this.prisma.savingsVault.findUnique({ where: { id: vaultId } });
+    if (!vault || vault.userId !== userId) throw new NotFoundException('Vault not found');
     if (vault.isLocked) throw new BadRequestException('Vault is locked');
     const amount = new Prisma.Decimal(dto.amount);
     if (vault.currentAmount.lt(amount)) throw new BadRequestException('Insufficient vault balance');
@@ -146,7 +203,7 @@ export class SavingsService {
       await tx.idempotencyKey.create({ data: { key: idempotencyKey, userId, endpoint: 'POST /savings/vaults/:id/withdraw', requestHash: hash, expiresAt: new Date(Date.now() + 24*60*60*1000) } });
 
       const transaction = await tx.transaction.create({ data: {
-        reference: `SAV-W-${Date.now()}`,
+        reference: `WDR-${Date.now()}`,
         idempotencyKey,
         senderId: userId,
         senderWalletId: wallet.id,
@@ -160,55 +217,56 @@ export class SavingsService {
         netAmount: amount,
         status: TransactionStatus.COMPLETED,
         processedAt: new Date(),
-        description: `Withdraw from vault ${vault.name}` } });
+        description: `Withdraw from vault ${vault.name}`,
+      }});
 
-      // ledger entries: debit vault, credit wallet
       await tx.ledgerEntry.createMany({ data: [
-        { transactionId: transaction.id, entryType: LedgerEntryType.USER_VAULT, vaultId: vault.id, accountKey: `user:vault:${vault.id}`, direction: TransactionDirection.DEBIT, amount, currency: vault.currency, balanceBefore: vault.currentAmount, balanceAfter: vault.currentAmount.sub(amount), description: `Vault withdrawal: ${vault.name}` },
-        { transactionId: transaction.id, entryType: LedgerEntryType.USER_WALLET, walletId: wallet.id, accountKey: `user:wallet:${wallet.id}`, direction: TransactionDirection.CREDIT, amount, currency: vault.currency, balanceBefore: wallet.balance, balanceAfter: wallet.balance.add(amount), description: `Vault withdrawal into wallet ${wallet.walletNumber}` },
+        { transactionId: transaction.id, entryType: LedgerEntryType.USER_VAULT, walletId: wallet.id, accountKey: `user:vault:${vault.id}`, direction: TransactionDirection.DEBIT, amount, currency: vault.currency, balanceBefore: vault.currentAmount, balanceAfter: vault.currentAmount.sub(amount), description: `Vault withdrawal: ${vault.name}` },
+        { transactionId: transaction.id, entryType: LedgerEntryType.USER_WALLET, walletId: wallet.id, accountKey: `user:wallet:${wallet.id}`, direction: TransactionDirection.CREDIT, amount, currency: vault.currency, balanceBefore: wallet.balance, balanceAfter: wallet.balance.add(amount), description: `Vault withdrawal to wallet` },
       ]});
 
-      // update balances
-      await tx.savingsVault.update({ where: { id: vault.id }, data: { currentAmount: vault.currentAmount.sub(amount) } });
       await tx.wallet.update({ where: { id: wallet.id }, data: { balance: wallet.balance.add(amount), availableBalance: wallet.availableBalance.add(amount) } });
+      await tx.savingsVault.update({ where: { id: vault.id }, data: { currentAmount: vault.currentAmount.sub(amount) } });
 
       const response = { transactionId: transaction.id, reference: transaction.reference, idempotencyKey };
       await tx.idempotencyKey.update({ where: { key: idempotencyKey }, data: { responseStatus: 200, responseBody: response } });
-
       return response;
     });
 
     return result;
   }
 
-  // Rules management
   async createRule(userId: string, dto: any) {
-    // validate vault/wallet belong to user
-    const v = await this.prisma.savingsVault.findUnique({ where: { id: dto.vaultId } });
-    if (!v || v.userId !== userId) throw new ForbiddenException('Vault not found');
-    return this.prisma.savingsRule.create({ data: { userId, walletId: dto.walletId, vaultId: dto.vaultId, type: dto.type, amount: dto.amount ? new Prisma.Decimal(dto.amount) : null, percentage: dto.percentage, cronExpression: dto.cronExpression, isActive: true } });
+    const vault = await this.prisma.savingsVault.findUnique({ where: { id: dto.vaultId } });
+    if (!vault || vault.userId !== userId) throw new NotFoundException('Vault not found');
+    const rule = await this.prisma.savingsRule.create({ data: { userId, walletId: dto.walletId, vaultId: dto.vaultId, type: dto.type, amount: dto.amount ? new Prisma.Decimal(dto.amount) : null, percentage: dto.percentage, cronExpression: dto.cronExpression, isActive: true } });
+    return this.formatRule(rule);
   }
 
   async getRules(userId: string, walletId?: string) {
-    return this.prisma.savingsRule.findMany({ where: { userId, walletId } });
+    const rules = await this.prisma.savingsRule.findMany({ where: { userId, walletId } });
+    return rules.map(r => this.formatRule(r));
   }
 
   async updateRule(userId: string, id: string, dto: any) {
     const r = await this.prisma.savingsRule.findUnique({ where: { id } });
     if (!r || r.userId !== userId) throw new NotFoundException('Rule not found');
-    return this.prisma.savingsRule.update({ where: { id }, data: dto });
+    const updated = await this.prisma.savingsRule.update({ where: { id }, data: dto });
+    return this.formatRule(updated);
   }
 
   async deleteRule(userId: string, id: string) {
     const r = await this.prisma.savingsRule.findUnique({ where: { id } });
     if (!r || r.userId !== userId) throw new NotFoundException('Rule not found');
-    return this.prisma.savingsRule.delete({ where: { id } });
+    const deleted = await this.prisma.savingsRule.delete({ where: { id } });
+    return this.formatRule(deleted);
   }
 
   async toggleRule(userId: string, id: string) {
     const r = await this.prisma.savingsRule.findUnique({ where: { id } });
     if (!r || r.userId !== userId) throw new NotFoundException('Rule not found');
-    return this.prisma.savingsRule.update({ where: { id }, data: { isActive: !r.isActive } });
+    const updated = await this.prisma.savingsRule.update({ where: { id }, data: { isActive: !r.isActive } });
+    return this.formatRule(updated);
   }
 
   // Automation engine: apply rules for a single transaction
@@ -223,14 +281,14 @@ export class SavingsService {
           const diff = rounded.sub(amount);
           if (diff.gt(0)) {
             // deposit diff to vault
-            await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: diff.toString() });
+            await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: diff.toString() }, SavingsContributionSource.ROUND_UP);
           }
         } else if (rule.type === 'FIXED_AMOUNT') {
-          if (rule.amount) await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: rule.amount.toString() });
+          if (rule.amount) await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: rule.amount.toString() }, SavingsContributionSource.FIXED_RULE);
         } else if (rule.type === 'PERCENTAGE') {
           if (rule.percentage) {
             const amt = new Prisma.Decimal(txRecord.amount).mul(rule.percentage).div(100);
-            if (amt.gt(0)) await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: amt.toString() });
+            if (amt.gt(0)) await this.depositToVault(txRecord.senderId, rule.vaultId, { amount: amt.toString() }, SavingsContributionSource.PERCENTAGE_RULE);
           }
         }
       } catch (err) {
@@ -247,11 +305,29 @@ export class SavingsService {
       try {
         // For scheduled, simply transfer fixed amount if configured
         if (rule.amount) {
-          await this.depositToVault(rule.userId, rule.vaultId, { amount: rule.amount.toString() });
+          await this.depositToVault(rule.userId, rule.vaultId, { amount: rule.amount.toString() }, SavingsContributionSource.SCHEDULED_RULE);
         }
       } catch (err) {
         await this.prisma.auditLog.create({ data: { userId: rule.userId, action: 'SAVINGS_RULE_FAILED' as any, metadata: { ruleId: rule.id, error: err.message } } });
       }
     }
+  }
+
+  async getVaultContributions(userId: string, vaultId: string) {
+    const vault = await this.prisma.savingsVault.findUnique({ where: { id: vaultId } });
+    if (!vault || vault.userId !== userId) throw new NotFoundException('Vault not found');
+    const contributions = await this.prisma.savingsContribution.findMany({
+      where: { vaultId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        transaction: {
+          select: {
+            reference: true,
+            status: true,
+          }
+        }
+      }
+    });
+    return contributions.map(c => this.formatContribution(c));
   }
 }

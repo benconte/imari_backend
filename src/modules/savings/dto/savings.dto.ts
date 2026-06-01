@@ -10,6 +10,7 @@ export const CreateVaultSchema = z.object({
   targetAmount: z.string().regex(/^\d+(\.\d{1,4})?$/),
   currency: z.nativeEnum(Currency),
   targetDate: z.string().datetime().optional(),
+  lockUntil: z.string().datetime().optional(),
   iconEmoji: z.string().max(8).optional(),
 });
 export type CreateVaultDto = z.infer<typeof CreateVaultSchema>;
@@ -19,24 +20,27 @@ export type UpdateVaultDto = z.infer<typeof UpdateVaultSchema>;
 
 export class CreateVaultDtoSwagger {
   @ApiProperty({ example: '07c03b10-cde1-41d5-a2be-8ab8978b51eb' })
-  walletId: string;
+  walletId!: string;
 
   @ApiProperty({ example: 'Holiday Fund' })
-  name: string;
+  name!: string;
 
   @ApiPropertyOptional({ example: 'Save for December holiday' })
   description?: string;
 
   @ApiProperty({ example: '100000', description: 'Target amount as string' })
-  targetAmount: string;
+  targetAmount!: string;
 
   @ApiProperty({ example: 'RWF', enum: ['RWF', 'USD', 'KES', 'UGX', 'TZS', 'EUR'] })
-  currency: Currency;
+  currency!: Currency;
 
   @ApiPropertyOptional({ example: '2026-12-01T00:00:00Z' })
   targetDate?: string;
 
-  @ApiPropertyOptional({ example: '🎯' })
+  @ApiPropertyOptional({ example: '2026-12-01T00:00:00Z', description: 'Lock the vault until this date to prevent early withdrawals' })
+  lockUntil?: string;
+
+  @ApiPropertyOptional({ example: '💲' })
   iconEmoji?: string;
 }
 
@@ -55,7 +59,7 @@ export type VaultWithdrawDto = z.infer<typeof VaultWithdrawSchema>;
 
 export class VaultDepositDtoSwagger {
   @ApiProperty({ example: '1000' })
-  amount: string;
+  amount!: string;
 
   @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000' })
   idempotencyKey?: string;
@@ -63,7 +67,7 @@ export class VaultDepositDtoSwagger {
 
 export class VaultWithdrawDtoSwagger {
   @ApiProperty({ example: '1000' })
-  amount: string;
+  amount!: string;
 
   @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000' })
   idempotencyKey?: string;
@@ -85,13 +89,13 @@ export type UpdateRuleDto = z.infer<typeof UpdateRuleSchema>;
 
 export class CreateRuleDtoSwagger {
   @ApiProperty({ example: '07c03b10-cde1-41d5-a2be-8ab8978b51eb' })
-  walletId: string;
+  walletId!: string;
 
   @ApiProperty({ example: '07c03b10-cde1-41d5-a2be-8ab8978b51ec' })
-  vaultId: string;
+  vaultId!: string;
 
   @ApiProperty({ example: 'ROUND_UP', enum: ['ROUND_UP', 'FIXED_AMOUNT', 'PERCENTAGE', 'SCHEDULED'] })
-  type: string;
+  type!: string;
 
   @ApiPropertyOptional({ example: '100' })
   amount?: string;

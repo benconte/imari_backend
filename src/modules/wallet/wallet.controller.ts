@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Post,
   Put,
+  Patch,
   Query,
   UseGuards,
   Param,
@@ -102,6 +103,7 @@ export class WalletController {
     return this.walletService.setPrimaryWallet(user.userId, dto.walletId);
   }
 
+  // Get My Wallets
   @Get('me')
   @ApiOperation({ summary: 'Get all wallets for the current user' })
   @ApiResponse({ status: 200, description: 'List of wallets with balances' })
@@ -109,39 +111,11 @@ export class WalletController {
     return this.walletService.getUserWallets(user.userId);
   }
 
-  @Post('pin/verify')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify wallet PIN' })
-  @ApiBody({
-    type: SetPinDtoSwagger,
-    examples: {
-      valid: {
-        summary: 'Verify PIN',
-        value: { pin: '1234' },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'PIN is valid' })
-  @ApiResponse({ status: 401, description: 'Invalid PIN' })
-  async verifyPin(
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(SetPinSchema)) dto: SetPinDto,
-  ) {
-    return this.walletService.verifyPin(user.userId, dto.pin);
-  }
-  
+  // Set PIN
   @Post('pin')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Set initial 4-digit wallet PIN (one time only)' })
-  @ApiBody({
-    type: SetPinDtoSwagger,
-    examples: {
-      valid: {
-        summary: 'Set wallet PIN',
-        value: { pin: '1234' },
-      },
-    },
-  })
+  @ApiBody({ type: SetPinDtoSwagger })
   @ApiResponse({ status: 201, description: 'PIN set successfully' })
   async setPin(
     @CurrentUser() user: AuthUser,
@@ -150,18 +124,11 @@ export class WalletController {
     return this.walletService.setPin(user.userId, dto.pin);
   }
 
-  @Put('pin')
+  // Change PIN
+  @Patch('pin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change existing wallet PIN (requires old PIN)' })
-  @ApiBody({
-    type: ChangePinDtoSwagger,
-    examples: {
-      valid: {
-        summary: 'Change PIN',
-        value: { oldPin: '1234', newPin: '5678' },
-      },
-    },
-  })
+  @ApiBody({ type: ChangePinDtoSwagger })
   @ApiResponse({ status: 200, description: 'PIN changed successfully' })
   async changePin(
     @CurrentUser() user: AuthUser,
@@ -170,24 +137,11 @@ export class WalletController {
     return this.walletService.changePin(user.userId, dto.oldPin, dto.newPin);
   }
 
+  // P2P Transfer
   @Post('transfer')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send money P2P to another wallet (PIN required in body)' })
-  @ApiBody({
-    type: P2PTransferDtoSwagger,
-    examples: {
-      valid: {
-        summary: 'Standard P2P transfer',
-        value: {
-          receiverWalletNumber: 'IMR-7465291357',
-          amount: '5000',
-          currency: 'RWF',
-          description: 'Monthly support',
-          pin: '1234',
-        },
-      },
-    },
-  })
+  @ApiBody({ type: P2PTransferDtoSwagger })
   @ApiResponse({ status: 200, description: 'Transfer successful' })
   @ApiResponse({ status: 401, description: 'Invalid PIN or wallet locked' })
   async p2pTransfer(
