@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;background:#f5f7fa;padding:40px 0;margin:0">
+  <div style="max-width:520px;margin:auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:4px;padding:12px 16px;margin-bottom:24px">
+      <span style="color:#b91c1c;font-weight:600;font-size:14px">Security Alert</span>
+    </div>
+
+    <h2 style="color:#111;margin-top:0">{{title}}</h2>
+    <p style="color:#444">Hi {{firstName}},</p>
+    <p style="color:#444">{{body}}</p>
+
+    <div style="background:#f8fafc;border-radius:8px;padding:20px;margin:24px 0">
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="color:#888;font-size:13px;padding:6px 0">Event</td>
+          <td style="color:#111;font-size:13px;text-align:right">{{eventType}}</td>
+        </tr>
+        <tr>
+          <td style="color:#888;font-size:13px;padding:6px 0">Time</td>
+          <td style="color:#111;font-size:13px;text-align:right">{{timestamp}}</td>
+        </tr>
+        {{#if ipAddress}}
+        <tr>
+          <td style="color:#888;font-size:13px;padding:6px 0">IP address</td>
+          <td style="color:#111;font-size:13px;text-align:right;font-family:monospace">{{ipAddress}}</td>
+        </tr>
+        {{/if}}
+      </table>
+    </div>
+
+    <p style="color:#444;font-size:14px">If this was not you, please <strong>change your password and enable MFA immediately</strong> or contact our support team.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#bbb;font-size:12px;text-align:center">Imari — Intelligent Digital Banking</p>
+  </div>
+</body>
+</html>
