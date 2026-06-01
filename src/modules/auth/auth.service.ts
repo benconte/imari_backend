@@ -49,7 +49,7 @@ export class AuthService {
   ) {}
 
   private verifyTotpWithWindow(code: string, secret: string): boolean {
-    return authenticator.create({ window: TOTP_WINDOW }).verify({ token: code, secret });
+    return authenticator.clone({ window: TOTP_WINDOW }).verify({ token: code, secret });
   }
 
   async register(dto: RegisterDto): Promise<{ message: string }> {
