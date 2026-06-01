@@ -46,6 +46,13 @@ export class SavingsController {
     return this.svc.getVault(user.userId, id);
   }
 
+  @Get('vaults/:id/contributions')
+  @ApiOperation({ summary: 'Get vault contribution (deposit) history' })
+  @ApiResponse({ status: 200, description: 'List of contributions for the vault' })
+  async getVaultContributions(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.svc.getVaultContributions(user.userId, id);
+  }
+
   @Patch('vaults/:id')
   async updateVault(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body(new ZodValidationPipe(UpdateVaultSchema)) dto: UpdateVaultDto) {
     return this.svc.updateVault(user.userId, id, dto);
