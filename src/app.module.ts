@@ -18,6 +18,7 @@ import { BeneficiaryModule } from '@modules/beneficiary/beneficiary.module';
 import { VirtualCardModule } from '@modules/virtual-card/virtual-card.module';
 import { DocsModule } from '@modules/docs/docs.module';
 import { AdminModule } from '@modules/admin/admin.module';
+import { InsightsModule } from '@modules/insights/insights.module';
 import { AnalyticsModule } from '@modules/analytics/analytics.module';
 import { AppController } from './app.controller';
 
@@ -60,6 +61,7 @@ import { AppController } from './app.controller';
     VirtualCardModule,
     DocsModule,
     AdminModule,
+    InsightsModule,
     AnalyticsModule,
   ],
   controllers: [AppController],
