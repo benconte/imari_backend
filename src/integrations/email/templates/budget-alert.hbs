@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;background:#f5f7fa;padding:40px 0;margin:0">
+  <div style="max-width:520px;margin:auto;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#111;margin-top:0">{{title}}</h2>
+    <p style="color:#444">Hi {{firstName}},</p>
+    <p style="color:#444">{{body}}</p>
+
+    <div style="background:#fff7ed;border-radius:8px;padding:20px;margin:24px 0">
+      <p style="color:#92400e;font-size:13px;margin:0 0 12px 0;font-weight:600">{{categoryName}} Budget</p>
+      <div style="background:#fed7aa;border-radius:4px;height:8px;width:100%;margin-bottom:8px">
+        <div style="background:#ea580c;border-radius:4px;height:8px;width:{{percentUsed}}%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:#92400e;font-size:13px">Spent: {{currency}} {{spent}}</span>
+        <span style="color:#92400e;font-size:13px;font-weight:600">{{percentUsed}}% used</span>
+        <span style="color:#92400e;font-size:13px">Limit: {{currency}} {{limit}}</span>
+      </div>
+    </div>
+
+    <p style="color:#888;font-size:13px">Review your spending in the Imari app to stay on track.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#bbb;font-size:12px;text-align:center">Imari — Intelligent Digital Banking</p>
+  </div>
+</body>
+</html>
