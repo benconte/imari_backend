@@ -36,10 +36,18 @@ async function bootstrap() {
   );
   app.use(compression());
   app.use(cookieParser());
-  app.enableCors({
-    origin: true, // tighten for production
-    credentials: true,
-  });
+  
+  // CORS configuration - allows all origins in development
+  const corsOptions = {
+    origin: nodeEnv === 'production' 
+      ? (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',')
+      : '*',
+    credentials: nodeEnv === 'production',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    maxAge: 3600,
+  };
+  app.enableCors(corsOptions);
 
   // Global API prefix
   app.setGlobalPrefix(apiPrefix);
