@@ -51,6 +51,7 @@
     "class-validator": "^0.14.1",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
+    "date-fns": "^4.4.0",
     "expo-server-sdk": "^6.1.0",
     "handlebars": "^4.7.8",
     "helmet": "^7.1.0",
