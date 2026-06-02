@@ -17,6 +17,7 @@ import { SavingsModule } from '@modules/savings/savings.module';
 import { BeneficiaryModule } from '@modules/beneficiary/beneficiary.module';
 import { DocsModule } from '@modules/docs/docs.module';
 import { AdminModule } from '@modules/admin/admin.module';
+import { InsightsModule } from '@modules/insights/insights.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -57,6 +58,7 @@ import { AppController } from './app.controller';
     BeneficiaryModule,
     DocsModule,
     AdminModule,
+    InsightsModule,
   ],
   controllers: [AppController],
   providers: [
