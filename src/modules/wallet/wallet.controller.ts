@@ -44,6 +44,9 @@ import {
   SetPrimaryWalletSchema,
   TransactionHistoryQuery,
   TransactionHistoryQuerySchema,
+  VerifyPinDto,
+  VerifyPinDtoSwagger,
+  VerifyPinSchema,
   WithdrawDtoSwagger,
   WithdrawSchema,
 } from './dto/wallet.dto';
@@ -122,6 +125,20 @@ export class WalletController {
     @Body(new ZodValidationPipe(SetPinSchema)) dto: SetPinDto,
   ) {
     return this.walletService.setPin(user.userId, dto.pin);
+  }
+
+  // Verify PIN
+  @Post('pin/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify wallet PIN without performing any transaction' })
+  @ApiBody({ type: VerifyPinDtoSwagger })
+  @ApiResponse({ status: 200, description: 'PIN is valid' })
+  @ApiResponse({ status: 401, description: 'Invalid PIN or wallet locked' })
+  async verifyPin(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(VerifyPinSchema)) dto: VerifyPinDto,
+  ) {
+    return this.walletService.verifyPin(user.userId, dto.pin);
   }
 
   // Change PIN
