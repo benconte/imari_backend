@@ -127,7 +127,7 @@ export class WalletController {
     return this.walletService.setPin(user.userId, dto.pin);
   }
 
-  // Verify PIN
+  
   @Post('pin/verify')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify wallet PIN without performing any transaction' })
@@ -141,7 +141,7 @@ export class WalletController {
     return this.walletService.verifyPin(user.userId, dto.pin);
   }
 
-  // Change PIN
+ 
   @Patch('pin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change existing wallet PIN (requires old PIN)' })
