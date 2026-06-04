@@ -35,8 +35,8 @@ export const configuration = () => ({
     from: process.env.MAIL_FROM ?? 'Imari <no-reply@imari.local>',
   },
   flutterwave: {
-    secretKey: process.env.FLUTTERWAVE_SECRET_KEY,
-    publicKey: process.env.FLUTTERWAVE_PUBLIC_KEY,
+    clientId: process.env.FLUTTERWAVE_CLIENT_ID,
+    clientSecret: process.env.FLUTTERWAVE_CLIENT_SECRET,
     encryptionKey: process.env.FLUTTERWAVE_ENCRYPTION_KEY,
     webhookHash: process.env.FLUTTERWAVE_WEBHOOK_HASH,
     baseUrl: process.env.FLUTTERWAVE_BASE_URL ?? 'https://api.flutterwave.com/v3',

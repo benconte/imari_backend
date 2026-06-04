@@ -20,6 +20,7 @@ import { DocsModule } from '@modules/docs/docs.module';
 import { AdminModule } from '@modules/admin/admin.module';
 import { InsightsModule } from '@modules/insights/insights.module';
 import { AnalyticsModule } from '@modules/analytics/analytics.module';
+import { FlutterwaveModule } from '@modules/flutterwave/flutterwave.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -63,6 +64,7 @@ import { AppController } from './app.controller';
     AdminModule,
     InsightsModule,
     AnalyticsModule,
+    FlutterwaveModule,
   ],
   controllers: [AppController],
   providers: [
