@@ -22,9 +22,10 @@ export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermissionKey[]> = {
     ADMIN_PERMISSIONS.WALLETS_FREEZE,
     ADMIN_PERMISSIONS.WALLETS_UNFREEZE,
     ADMIN_PERMISSIONS.WALLETS_ADJUST_LIMIT,
-    // Transaction reversal & refunds
+    // Transaction reversal, refunds & fraud flagging
     ADMIN_PERMISSIONS.TRANSACTIONS_REVERSE,
     ADMIN_PERMISSIONS.TRANSACTIONS_REFUND,
+    ADMIN_PERMISSIONS.TRANSACTIONS_MARK_SUSPECT,
     // Read audit logs
     ADMIN_PERMISSIONS.AUDIT_READ,
     // Admin management - read only
