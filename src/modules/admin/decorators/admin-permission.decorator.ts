@@ -1,5 +1,4 @@
-import { SetMetadata, UseGuards, applyDecorators } from '@nestjs/common';
-import { AdminPermissionGuard } from '../guards/admin-permission.guard';
+import { SetMetadata, applyDecorators } from '@nestjs/common';
 import { AdminPermissionKey } from '../constants/permissions.constant';
 
 export const ADMIN_PERMISSION_KEY = 'admin_permissions';
@@ -26,6 +25,13 @@ export const ADMIN_PERMISSION_MODE = 'admin_permission_mode';
  *
  * Effective permissions = ROLE_PERMISSIONS[role] ∪ admin.permissions[]
  * Wildcard '*' permission grants everything
+ *
+ * NOTE: this only sets metadata — it does NOT register AdminPermissionGuard.
+ * That guard is applied by @AdminAuth() (always, after AdminAuthGuard), because
+ * stacking `UseGuards(AdminPermissionGuard)` here would land it *before*
+ * AdminAuthGuard in the resolved guard chain (NestJS prepends metadata from
+ * decorators applied later/higher in the stack), running the permission check
+ * before `request.user` is populated. Always pair @AdminPermission() with @AdminAuth().
  */
 export function AdminPermission(
   permissions: AdminPermissionKey | AdminPermissionKey[],
@@ -36,6 +42,5 @@ export function AdminPermission(
   return applyDecorators(
     SetMetadata(ADMIN_PERMISSION_KEY, perms),
     SetMetadata(ADMIN_PERMISSION_MODE, mode),
-    UseGuards(AdminPermissionGuard),
   );
 }

@@ -40,7 +40,7 @@ import { Public } from 'src/common/decorators/public.decorator';
  * @AdminPermission(['users:suspend', 'audit:read'], 'ALL') - Requires all
  */
 @ApiTags('Admin')
-@Controller('api/v1/admin')
+@Controller('admin')
 export class AdminController {
   constructor(private adminService: AdminService) {}
 

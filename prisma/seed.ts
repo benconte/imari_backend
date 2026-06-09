@@ -13,29 +13,67 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Seed a default super-admin (change credentials immediately after first login)
-  const adminEmail = 'admin@imari.local';
-  const adminPassword = 'ChangeMe123!';
+ const admins = [
+  {
+    email: 'superadmin@imari.com',
+    firstName: 'Super',
+    lastName: 'Admin',
+    role: 'SUPER_ADMIN',
+    permissions: ['*'],
+  },
+  {
+    email: 'financial@imari.com',
+    firstName: 'Financial',
+    lastName: 'Officer',
+    role: 'OPS_ADMIN',
+    permissions: ['finance:*'],
+  },
+  {
+    email: 'fraud@imari.com',
+    firstName: 'Fraud',
+    lastName: 'Officer',
+    role: 'FRAUD_OFFICER',
+    permissions: ['fraud:*'],
+  },
+  {
+    email: 'support@imari.com',
+    firstName: 'Support',
+    lastName: 'Agent',
+    role: 'SUPPORT',
+    permissions: ['support:*'],
+  },
+];
 
-  const existing = await prisma.adminUser.findUnique({ where: { email: adminEmail } });
+const defaultPassword = 'password123';
+const passwordHash = await argon2.hash(defaultPassword, {
+  type: argon2.argon2id,
+});
+
+for (const admin of admins) {
+  const existing = await prisma.adminUser.findUnique({
+    where: { email: admin.email },
+  });
+
   if (!existing) {
-    const passwordHash = await argon2.hash(adminPassword, { type: argon2.argon2id });
     await prisma.adminUser.create({
       data: {
-        email: adminEmail,
+        email: admin.email,
         passwordHash,
-        firstName: 'Imari',
-        lastName: 'Admin',
-        role: 'SUPER_ADMIN',
-        permissions: ['*'],
+        firstName: admin.firstName,
+        lastName: admin.lastName,
+        role: admin.role as any,
+        permissions: admin.permissions,
         isActive: true,
       },
     });
-    console.log(`✅ Created default admin: ${adminEmail} / ${adminPassword}`);
-    console.log('   ⚠️  CHANGE THIS PASSWORD AFTER FIRST LOGIN.');
+
+    console.log(
+      `✅ Created ${admin.role}: ${admin.email} / ${defaultPassword}`,
+    );
   } else {
-    console.log(`ℹ️  Admin already exists: ${adminEmail}`);
+    console.log(`ℹ️ Admin already exists: ${admin.email}`);
   }
+}
 
   console.log('✅ Seed complete.');
 }
