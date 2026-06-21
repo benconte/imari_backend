@@ -22,6 +22,7 @@ import { AdminFinanceModule } from '@modules/admin/finance/admin-finance.module'
 import { AdminKycModule } from '@modules/admin/kyc/admin-kyc.module';
 import { InsightsModule } from '@modules/insights/insights.module';
 import { AnalyticsModule } from '@modules/analytics/analytics.module';
+import { FlutterwaveModule } from '@modules/flutterwave/flutterwave.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -67,6 +68,7 @@ import { AppController } from './app.controller';
     AdminKycModule,
     InsightsModule,
     AnalyticsModule,
+    FlutterwaveModule,
   ],
   controllers: [AppController],
   providers: [

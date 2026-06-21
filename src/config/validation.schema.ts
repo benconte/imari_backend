@@ -30,8 +30,8 @@ const envSchema = z.object({
   MAIL_PASS: z.string().optional(),
   MAIL_FROM: z.string().default('Imari <no-reply@imari.local>'),
 
-  FLUTTERWAVE_SECRET_KEY: z.string().optional(),
-  FLUTTERWAVE_PUBLIC_KEY: z.string().optional(),
+  FLUTTERWAVE_CLIENT_ID: z.string().optional(),
+  FLUTTERWAVE_CLIENT_SECRET: z.string().optional(),
   FLUTTERWAVE_ENCRYPTION_KEY: z.string().optional(),
   FLUTTERWAVE_WEBHOOK_HASH: z.string().optional(),
   FLUTTERWAVE_BASE_URL: z.string().url().default('https://api.flutterwave.com/v3'),
